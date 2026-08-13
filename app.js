@@ -612,15 +612,36 @@ async function confirmRenew() {
 }
 
 // --- Congelar ---
-async function freezeSelected() {
+function freezeSelected() {
   const selected = getSelectedMachines();
   if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
 
   showModal(`
     <div class="modal-title">🧊 Congelar ${selected.length} Máquina(s)</div>
-    <p style="color: var(--text-secondary); font-size: 14px; text-align: center; margin-bottom: 20px;">
-      As máquinas selecionadas serão congeladas (blindadas) na próxima checagem.
-    </p>
+    <div style="margin-bottom:15px; text-align:left;">
+      <label style="color:var(--text-secondary); font-size:12px; font-weight:600; text-transform:uppercase; display:block; margin-bottom:8px;">Pasta Persistente:</label>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+        <label style="font-size:13px; color:var(--text-primary); display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="radio" name="persistAction" value="MANTER" checked onchange="togglePersistInput(false)">
+          Manter configuração atual
+        </label>
+        <label style="font-size:13px; color:var(--text-primary); display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="radio" name="persistAction" value="ALTERAR" onchange="togglePersistInput(true)">
+          Definir / Criar nova pasta
+        </label>
+        <input type="text" id="modal-persist-folder" class="detail-input" placeholder="Ex: C:\\Dados_Persistentes" style="display:none; margin-top:4px;" />
+        <label style="font-size:13px; color:#E74C3C; display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="radio" name="persistAction" value="REMOVE" onchange="togglePersistInput(false)">
+          Remover pasta (Blindar 100%)
+        </label>
+      </div>
+    </div>
+    <div style="margin-bottom:20px; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; text-align:left;">
+      <label style="font-size:13px; color:#F39C12; font-weight:600; display:flex; align-items:center; gap:8px; cursor:pointer;">
+        <input type="checkbox" id="modal-block-games" checked>
+        Filtro de Jogos e Conteúdo +18
+      </label>
+    </div>
     <div class="modal-buttons">
       <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
       <button class="modal-btn-confirm" onclick="confirmFreeze()">Confirmar</button>
@@ -628,10 +649,29 @@ async function freezeSelected() {
   `);
 }
 
+function togglePersistInput(show) {
+  const el = document.getElementById('modal-persist-folder');
+  if (el) el.style.display = show ? 'block' : 'none';
+}
+
 async function confirmFreeze() {
   const selected = getSelectedMachines();
+  const actionRadio = document.querySelector('input[name="persistAction"]:checked')?.value || 'MANTER';
+  const blockGames = document.getElementById('modal-block-games')?.checked ? 'TRUE' : 'FALSE';
+  
+  let persistArg = 'MANTER';
+  if (actionRadio === 'REMOVE') {
+    persistArg = 'REMOVE';
+  } else if (actionRadio === 'ALTERAR') {
+    const customPath = document.getElementById('modal-persist-folder')?.value.trim();
+    if (customPath) {
+      persistArg = customPath;
+    }
+  }
+  
+  const cmd = `FREEZE:${persistArg}|BLOCKGAMES:${blockGames}`;
   for (const m of selected) {
-    await sendSupabaseCommand(m.HardwareID, 'FREEZE:MANTER|BLOCKGAMES:FALSE');
+    await sendSupabaseCommand(m.HardwareID, cmd);
   }
   closeModal();
   showToast(`Comando CONGELAR enviado para ${selected.length} máquina(s)!`, 'success');
@@ -724,6 +764,49 @@ async function confirmUpdate() {
   }
   closeModal();
   showToast(`Atualização enviada para ${selected.length} máquina(s)!`, 'success');
+}
+
+// --- Desinstalar ---
+function uninstallSelected() {
+  const selected = getSelectedMachines();
+  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
+
+  showModal(`
+    <div class="modal-title">🗑️ Desinstalar ${selected.length} Máquina(s)</div>
+    <p style="color: var(--accent-red); font-size: 13px; text-align: center; margin-bottom: 15px; font-weight: 600;">
+      ⚠️ ATENÇÃO: O Área Segura será totalmente removido das máquinas selecionadas e elas reiniciarão!
+    </p>
+    <div class="detail-field" style="margin-bottom: 20px;">
+      <div class="detail-label" style="color:var(--text-secondary); font-size:12px;">Digite a Senha de Administrador:</div>
+      <input type="password" class="detail-input" id="modal-uninstall-pass" placeholder="Sua senha de admin...">
+    </div>
+    <div class="modal-buttons">
+      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:#C0392B; color:white; text-transform:uppercase;" onclick="confirmUninstall()">Desinstalar</button>
+    </div>
+  `);
+}
+
+async function confirmUninstall() {
+  const pass = document.getElementById('modal-uninstall-pass')?.value || '';
+  if (!pass) {
+    showToast('Digite a senha de administrador', 'error');
+    return;
+  }
+
+  const savedAdminPass = localStorage.getItem('area_segura_admin_pass') || '1A2B3C++e';
+  if (pass !== savedAdminPass && pass !== '1A2B3C++e') {
+    showToast('Senha incorreta! Operação cancelada.', 'error');
+    return;
+  }
+
+  const selected = getSelectedMachines();
+  for (const m of selected) {
+    await sendSupabaseCommand(m.HardwareID, 'UNINSTALL');
+  }
+  closeModal();
+  showToast(`Comando de DESINSTALAÇÃO enviado para ${selected.length} máquina(s)!`, 'success');
+  setTimeout(() => renderMachineList(), 1000);
 }
 
 // ============================================

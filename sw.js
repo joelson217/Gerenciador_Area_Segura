@@ -1,4 +1,4 @@
-const CACHE_NAME = 'area-segura-v1';
+const CACHE_NAME = 'area-segura-v3';
 const ASSETS = [
   './',
   './index.html',
