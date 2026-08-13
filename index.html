@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="description" content="Gerenciador de Clientes e Licenças - Área Segura Pro">
+  <meta name="theme-color" content="#0F3460">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Área Segura">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.json">
+  <title>Área Segura - Gerenciador</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ============================================ -->
+  <!-- SPLASH SCREEN COM LOGO -->
+  <!-- ============================================ -->
+  <div id="splash-screen">
+    <img src="logo.png" alt="Área Segura" class="splash-logo">
+    <div class="splash-title">ÁREA SEGURA</div>
+    <div class="splash-subtitle">PAINEL DE CONTROLE</div>
+    <div class="splash-loader"></div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- APP PRINCIPAL -->
+  <!-- ============================================ -->
+  <div id="app">
+
+    <!-- Header -->
+    <header class="app-header">
+      <button class="header-back" onclick="goBack()" aria-label="Voltar">‹</button>
+      <img src="logo.png" alt="Logo" class="header-logo">
+      <span class="header-title">ÁREA SEGURA</span>
+      <button class="header-refresh" onclick="refreshAll()" aria-label="Atualizar">⟳</button>
+    </header>
+
+    <!-- Conteúdo Principal -->
+    <main class="main-content">
+
+      <!-- ======== PÁGINA: DASHBOARD ======== -->
+      <div id="page-dashboard" class="page active">
+
+        <!-- Cards de Estatísticas -->
+        <div class="dashboard-cards">
+          <div class="dash-card card-clients" onclick="navigateTo('clients')">
+            <div class="dash-card-icon">👥</div>
+            <div class="dash-card-label">Clientes</div>
+            <div class="dash-card-value" id="stat-clients">0</div>
+          </div>
+          <div class="dash-card card-machines" onclick="navigateTo('clients')">
+            <div class="dash-card-icon">🖥️</div>
+            <div class="dash-card-label">Máquinas</div>
+            <div class="dash-card-value" id="stat-machines">0</div>
+          </div>
+          <div class="dash-card card-expiring" onclick="navigateTo('expiring')">
+            <div class="dash-card-icon">⏳</div>
+            <div class="dash-card-label">Expirando</div>
+            <div class="dash-card-value" id="stat-expiring">0</div>
+          </div>
+          <div class="dash-card card-ok">
+            <div class="dash-card-icon">✅</div>
+            <div class="dash-card-label">Em Dia</div>
+            <div class="dash-card-value" id="stat-ok">0</div>
+          </div>
+        </div>
+
+        <!-- Ações Rápidas -->
+        <div class="section-title">Ações Rápidas</div>
+        <div style="display: flex; gap: 10px; margin-bottom: 24px;">
+          <button class="btn-primary" style="flex:1; font-size: 13px;" onclick="showNewClientModal()">➕ Novo Cliente</button>
+          <button class="btn-secondary" style="flex:1; font-size: 13px;" onclick="importDB()">📥 Importar</button>
+          <button class="btn-secondary" style="flex:1; font-size: 13px;" onclick="exportDB()">📤 Exportar</button>
+        </div>
+
+        <!-- Clientes Recentes -->
+        <div class="section-title">Clientes Recentes</div>
+        <div id="recent-clients" class="client-list"></div>
+      </div>
+
+      <!-- ======== PÁGINA: LISTA DE CLIENTES ======== -->
+      <div id="page-clients" class="page">
+        <div class="search-bar">
+          <span class="search-bar-icon">🔍</span>
+          <input type="text" id="search-clients" placeholder="Buscar cliente..." autocomplete="off">
+        </div>
+
+        <div id="client-list-container" class="client-list"></div>
+
+        <button class="btn-new-client" onclick="showNewClientModal()">➕ NOVO CLIENTE</button>
+      </div>
+
+      <!-- ======== PÁGINA: DETALHES DO CLIENTE ======== -->
+      <div id="page-detail" class="page">
+
+        <!-- Dados do Cliente -->
+        <div class="detail-section">
+          <div class="detail-section-title">📋 Dados do Cliente</div>
+
+          <div class="detail-field">
+            <div class="detail-label">Instituição</div>
+            <input type="text" class="detail-input" id="detail-instituicao">
+          </div>
+
+          <div class="detail-field">
+            <div class="detail-label">Localidade / Endereço</div>
+            <input type="text" class="detail-input" id="detail-localidade">
+          </div>
+
+          <div class="detail-field">
+            <div class="detail-label">Responsável</div>
+            <input type="text" class="detail-input" id="detail-responsavel">
+          </div>
+
+          <div class="detail-field">
+            <div class="detail-label">Contato (WhatsApp / Email)</div>
+            <input type="text" class="detail-input" id="detail-contato">
+          </div>
+
+          <div class="detail-field">
+            <div class="detail-label">Ambientes</div>
+            <div class="detail-input" id="detail-ambientes" style="opacity: 0.7; cursor: default;">Lab Principal</div>
+          </div>
+
+          <button class="btn-primary" style="margin-top: 12px;" onclick="saveClientDetails()">💾 SALVAR DADOS</button>
+        </div>
+
+        <!-- Máquinas -->
+        <div class="detail-section">
+          <div class="detail-section-title">🖥️ Máquinas</div>
+          <div id="detail-maq-count" style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">0 máquina(s)</div>
+          <button class="btn-primary" onclick="navigateTo('machines', selectedClient)">VER / GERENCIAR MÁQUINAS →</button>
+        </div>
+      </div>
+
+      <!-- ======== PÁGINA: MÁQUINAS DO CLIENTE ======== -->
+      <div id="page-machines" class="page">
+
+        <!-- Barra de Ações -->
+        <div class="action-bar">
+          <button class="action-btn freeze" onclick="freezeSelected()">🧊 Congelar</button>
+          <button class="action-btn thaw" onclick="thawSelected()">🔥 Descongelar</button>
+          <button class="action-btn renew" onclick="showRenewModal()">🔑 Renovar</button>
+          <button class="action-btn revoke" onclick="revokeSelected()">🚫 Revogar</button>
+          <button class="action-btn update" onclick="showUpdateModal()">🔄 Atualizar</button>
+          <button class="action-btn add" onclick="showAddMachineModal()">➕ Nova</button>
+        </div>
+
+        <!-- Filtro e Busca -->
+        <div class="filter-bar">
+          <select class="filter-select" id="filter-ambiente" onchange="renderMachineList()">
+            <option value="">Todos</option>
+          </select>
+          <input type="text" id="search-machine" class="detail-input" placeholder="🔍 Buscar HWID..." style="flex: 1;" oninput="renderMachineList()">
+        </div>
+
+        <!-- Selecionar Todas -->
+        <div class="select-all-row">
+          <label>
+            <input type="checkbox" onchange="toggleSelectAll(this.checked)">
+            Selecionar Todas
+          </label>
+          <span class="select-count" id="select-count">0 selecionada(s)</span>
+        </div>
+
+        <!-- Lista de Máquinas -->
+        <div id="machines-list"></div>
+      </div>
+
+      <!-- ======== PÁGINA: RELATÓRIO EXPIRANDO ======== -->
+      <div id="page-expiring" class="page">
+        <div class="section-title" style="margin-bottom: 16px;">⚠️ Máquinas Expirando (≤ 30 dias)</div>
+        <div id="expiring-list" class="expiring-list"></div>
+      </div>
+
+      <!-- ======== PÁGINA: CONFIGURAÇÕES ======== -->
+      <div id="page-settings" class="page">
+        <div class="section-title" style="margin-bottom: 16px;">⚙️ Ajustes e Segurança</div>
+        
+        <div class="settings-card">
+          <div class="settings-group-title">🔒 Segurança do Aplicativo</div>
+          
+          <div class="settings-item">
+            <div class="settings-info">
+              <span class="settings-label">Bloqueio por PIN</span>
+              <span class="settings-sub">Exigir código de 6 dígitos ao abrir o app</span>
+            </div>
+            <label class="switch-toggle">
+              <input type="checkbox" id="setting-pin-enabled" onchange="togglePinSecurity(this.checked)">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="settings-item" id="biometric-settings-item" style="display: none;">
+            <div class="settings-info">
+              <span class="settings-label">Biometria / Reconhecimento Facial</span>
+              <span class="settings-sub">Desbloquear usando Face ID, Touch ID ou Impressão Digital</span>
+            </div>
+            <label class="switch-toggle">
+              <input type="checkbox" id="setting-bio-enabled" onchange="toggleBioSecurity(this.checked)">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          
+          <div class="settings-action-row" id="change-pin-row" style="display: none;">
+            <button class="btn-secondary" style="width: 100%; margin-top: 10px;" onclick="startPinChange()">✏️ Alterar PIN de Acesso</button>
+          </div>
+        </div>
+        
+        <div class="settings-card" style="margin-top: 20px;">
+          <div class="settings-group-title">📡 Informações do Servidor</div>
+          <div class="settings-static-info">
+            <div class="info-row">
+              <span class="info-label">Supabase URL:</span>
+              <span class="info-value" style="font-size: 11px; word-break: break-all;">https://inndgkbugwegrkbvogew.supabase.co</span>
+            </div>
+            <div class="info-row" style="margin-top: 8px;">
+              <span class="info-label">Versão do App:</span>
+              <span class="info-value">1.1.0 PWA</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Navegação Inferior (Bottom Tabs) -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-page="dashboard">
+        <span class="nav-item-icon">📊</span>
+        <span class="nav-item-label">Início</span>
+      </button>
+      <button class="nav-item" data-page="clients">
+        <span class="nav-item-icon">👥</span>
+        <span class="nav-item-label">Clientes</span>
+      </button>
+      <button class="nav-item" data-page="expiring">
+        <span class="nav-item-icon">⏳</span>
+        <span class="nav-item-label">Alertas</span>
+      </button>
+      <button class="nav-item" data-page="settings">
+        <span class="nav-item-icon">⚙️</span>
+        <span class="nav-item-label">Ajustes</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- ============================================ -->
+  <!-- TELA DE BLOQUEIO (SECURITY LOCK SCREEN) -->
+  <!-- ============================================ -->
+  <div id="lock-screen" class="lock-screen-overlay">
+    <div class="lock-container">
+      <img src="logo.png" alt="Logo" class="lock-logo">
+      <h2 class="lock-title">Área Segura</h2>
+      <p class="lock-subtitle" id="lock-message">Carregando...</p>
+      
+      <!-- Dots indicator for PIN -->
+      <div class="pin-dots" id="pin-dots">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </div>
+
+      <!-- PIN Keypad -->
+      <div class="pin-pad">
+        <button class="pin-btn" onclick="pressPinNum('1')">1</button>
+        <button class="pin-btn" onclick="pressPinNum('2')">2</button>
+        <button class="pin-btn" onclick="pressPinNum('3')">3</button>
+        <button class="pin-btn" onclick="pressPinNum('4')">4</button>
+        <button class="pin-btn" onclick="pressPinNum('5')">5</button>
+        <button class="pin-btn" onclick="pressPinNum('6')">6</button>
+        <button class="pin-btn" onclick="pressPinNum('7')">7</button>
+        <button class="pin-btn" onclick="pressPinNum('8')">8</button>
+        <button class="pin-btn" onclick="pressPinNum('9')">9</button>
+        <button class="pin-btn action-btn-biometric" id="btn-biometric-auth" onclick="triggerBiometricAuth()">
+          <span class="biometric-icon">👤</span>
+        </button>
+        <button class="pin-btn" onclick="pressPinNum('0')">0</button>
+        <button class="pin-btn action-btn-delete" onclick="deletePinDigit()">⌫</button>
+      </div>
+      
+      <div class="lock-footer" id="lock-footer-info">
+        Aplicativo Protegido por Biometria Local
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
