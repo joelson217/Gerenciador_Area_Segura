@@ -303,7 +303,7 @@ function renderClientDetail() {
   document.getElementById('detail-maq-count').textContent = `${maqCount} máquina(s) cadastrada(s)`;
 
   const ambientes = getClientAmbientes(selectedClient);
-  document.getElementById('detail-ambientes').textContent = ambientes.join(', ') || 'Nenhum';
+  document.getElementById('detail-ambientes').value = ambientes.join(', ');
 }
 
 function getClientAmbientes(client) {
@@ -328,6 +328,12 @@ function saveClientDetails() {
   selectedClient.Responsavel = document.getElementById('detail-responsavel').value.trim();
   selectedClient.Contato = document.getElementById('detail-contato').value.trim();
   selectedClient.NomeExibicao = inst;
+
+  const ambsInput = document.getElementById('detail-ambientes').value;
+  selectedClient.Ambientes = ambsInput.split(',').map(a => a.trim()).filter(a => a.length > 0);
+  if (selectedClient.Ambientes.length === 0) {
+    selectedClient.Ambientes = ['Lab Principal'];
+  }
 
   saveDB();
   showToast('Dados atualizados com sucesso!', 'success');
