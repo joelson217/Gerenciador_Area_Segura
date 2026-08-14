@@ -1,4 +1,4 @@
-const CACHE_NAME = 'area-segura-v3';
+const CACHE_NAME = 'area-segura-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -12,8 +12,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
   self.skipWaiting();
+  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
 });
 
 self.addEventListener('activate', e => {
@@ -25,6 +25,7 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
+// Network-First: Sempre busca a versão mais recente da rede quando online
 self.addEventListener('fetch', e => {
   if (e.request.url.includes('supabase.co')) {
     e.respondWith(
@@ -32,7 +33,16 @@ self.addEventListener('fetch', e => {
     );
   } else {
     e.respondWith(
-      caches.match(e.request).then(r => r || fetch(e.request))
+      fetch(e.request)
+        .then(response => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(e.request))
     );
   }
 });
+

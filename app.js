@@ -91,7 +91,32 @@ function loadDB() {
   if (saved) {
     try { DB = JSON.parse(saved); } catch (e) { DB = []; }
   }
-  if (!Array.isArray(DB)) DB = [];
+  if (!Array.isArray(DB) || DB.length === 0) {
+    DB = [
+      {
+        "Id": "83089473-cad9-48aa-af20-c06fa6b0b693",
+        "Instituicao": "Casa",
+        "Responsavel": "Joelson",
+        "Contato": "81-992781275",
+        "Ambientes": ["Lab Principal"],
+        "Maquinas": [],
+        "NomeExibicao": "Casa",
+        "CorAlerta": "White"
+      },
+      {
+        "Id": "5d1f228b-7f16-4f75-9812-75f77b0ac75b",
+        "Instituicao": "Novo Cliente (2)",
+        "Localidade": "",
+        "Responsavel": "",
+        "Contato": "",
+        "Ambientes": ["Lab Principal"],
+        "Maquinas": [],
+        "NomeExibicao": "Novo Cliente (2)",
+        "CorAlerta": "White"
+      }
+    ];
+    saveDB();
+  }
 }
 
 async function saveDB() {
@@ -1606,7 +1631,9 @@ function renderSettings() {
 document.addEventListener('DOMContentLoaded', () => {
   // Service Worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      reg.update();
+    }).catch(() => {});
   }
 
   // Carregar DB
