@@ -339,6 +339,61 @@ function saveClientDetails() {
   showToast('Dados atualizados com sucesso!', 'success');
 }
 
+// --- Excluir Cliente ---
+function showDeleteClientModal() {
+  if (!selectedClient) return;
+  const nome = selectedClient.Instituicao || selectedClient.NomeExibicao || 'Este cliente';
+  const maqCount = (selectedClient.Maquinas || []).length;
+
+  showModal(`
+    <div class="modal-title" style="color:#E94560;">Excluir Cliente</div>
+    <div style="color:#ccc;margin-bottom:12px;">
+      Tem certeza que deseja excluir <strong style="color:white;">${escapeHtml(nome)}</strong>?
+      ${maqCount > 0 ? `<br><br><span style="color:#F39C12;">Atenao: ${maqCount} maquina(s) cadastrada(s) serao removidas.</span>` : ''}
+    </div>
+    <div class="detail-field">
+      <div class="detail-label" style="color:#E94560;">Digite o nome da instituicao para confirmar:</div>
+      <input type="text" class="detail-input" id="modal-confirm-delete" placeholder="${escapeHtml(nome)}" autocomplete="off">
+    </div>
+    <div class="modal-buttons">
+      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="modal-btn-confirm" style="background:#E94560;" onclick="confirmDeleteClient()">EXCLUIR</button>
+    </div>
+  `);
+}
+
+async function confirmDeleteClient() {
+  if (!selectedClient) return;
+  const nome = selectedClient.Instituicao || selectedClient.NomeExibicao || '';
+  const typed = document.getElementById('modal-confirm-delete').value.trim();
+
+  if (typed.toLowerCase() !== nome.toLowerCase()) {
+    showToast('O nome digitado nao confere. Exclusao cancelada.', 'error');
+    return;
+  }
+
+  // Remove cloud licenses for all machines of this client
+  const machines = selectedClient.Maquinas || [];
+  for (const m of machines) {
+    try {
+      await fetch(`${SUPABASE_URL}/licencas?hardware_id=eq.${m.HardwareID}`, {
+        method: 'DELETE',
+        headers: supaHeaders
+      });
+    } catch (e) { /* offline, will remain in cloud */ }
+  }
+
+  // Remove client from local DB
+  const idx = DB.findIndex(c => c.Id === selectedClient.Id);
+  if (idx >= 0) DB.splice(idx, 1);
+
+  saveDB();
+  closeModal();
+  selectedClient = null;
+  navigateTo('dashboard');
+  showToast(`Cliente "${nome}" excluido com sucesso!`, 'success');
+}
+
 // ============================================
 // Máquinas
 // ============================================
