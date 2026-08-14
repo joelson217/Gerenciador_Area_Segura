@@ -94,8 +94,25 @@ function loadDB() {
   if (!Array.isArray(DB)) DB = [];
 }
 
-function saveDB() {
+async function saveDB() {
   localStorage.setItem('area_segura_db', JSON.stringify(DB));
+  
+  // Sincronizar banco de dados para a nuvem
+  try {
+    await fetch(`${SUPABASE_URL}/licencas`, {
+      method: 'POST',
+      headers: { ...supaHeaders, 'Prefer': 'resolution=merge-duplicates' },
+      body: JSON.stringify({
+        hardware_id: 'DB_BACKUP',
+        chave_ativacao: JSON.stringify(DB),
+        data_expiracao: '1970-01-01',
+        status_protecao: 'BACKUP',
+        pasta_persistente: 'Nenhuma',
+        comando_remoto: 'NONE',
+        ultima_sincronizacao: new Date().toLocaleString('pt-BR')
+      })
+    });
+  } catch (e) { console.error('Erro ao salvar backup na nuvem:', e); }
 }
 
 // --- Sincronizar DB com Supabase (carregar licenças da nuvem) ---
@@ -108,9 +125,32 @@ async function syncFromCloud() {
     if (!res.ok) return;
     const cloudData = await res.json();
 
-    // Se DB local está vazio, tentar importar do JSON compartilhado
-    // O DB é gerenciado localmente e sincronizado via Supabase
-    await fetchCloudStatuses();
+    // Sincronizar o banco de dados dos clientes da nuvem se houver
+    const backupRow = cloudData.find(r => r.hardware_id === 'DB_BACKUP');
+    if (backupRow && backupRow.chave_ativacao) {
+      try {
+        const cloudDB = JSON.parse(backupRow.chave_ativacao);
+        if (Array.isArray(cloudDB) && cloudDB.length > 0) {
+          // Atualiza o local se estiver vazio ou se o da nuvem for mais recente/diferente
+          if (DB.length === 0 || JSON.stringify(DB) !== JSON.stringify(cloudDB)) {
+            DB = cloudDB;
+            localStorage.setItem('area_segura_db', JSON.stringify(DB));
+            
+            // Re-renderiza a tela atual para refletir os novos dados
+            if (currentPage === 'dashboard') renderDashboard();
+            else if (currentPage === 'clients') renderClientList();
+          }
+        }
+      } catch (err) { console.error('Erro ao carregar banco da nuvem:', err); }
+    }
+
+    // Carregar status reais das máquinas
+    cloudStatuses = {};
+    cloudData.forEach(r => {
+      if (r.hardware_id !== 'DB_BACKUP') {
+        cloudStatuses[r.hardware_id] = r;
+      }
+    });
   } catch (e) { /* offline */ }
 }
 
@@ -1571,6 +1611,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Carregar DB
   loadDB();
+  syncFromCloud();
 
   // Checar suporte biometria
   checkBiometricsSupport().then(supported => {
