@@ -489,27 +489,156 @@ function getSelectedMachines() {
 // Ações de Máquinas
 // ============================================
 
-// --- Adicionar Nova Máquina ---
-function showAddMachineModal() {
+// --- Buscar Maquinas Pendentes na Nuvem ---
+async function fetchPendingMachines() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/licencas?chave_ativacao=like.PENDENTE*&select=hardware_id,chave_ativacao,ultima_sincronizacao`,
+      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+    );
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) { return []; }
+}
+
+function parsePendingMeta(chaveAtivacao) {
+  // Format: PENDENTE|IP:xxx.xxx.xxx.xxx|HOST:NOME|LOCALIP:192.168.x.x
+  const meta = { ip: 'Desconhecido', host: 'Desconhecido', localIp: '127.0.0.1' };
+  if (!chaveAtivacao) return meta;
+  const parts = chaveAtivacao.split('|');
+  parts.forEach(p => {
+    if (p.startsWith('IP:')) meta.ip = p.substring(3);
+    if (p.startsWith('HOST:')) meta.host = p.substring(5);
+    if (p.startsWith('LOCALIP:')) meta.localIp = p.substring(8);
+  });
+  return meta;
+}
+
+async function getMyPublicIP() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=text');
+    if (res.ok) return (await res.text()).trim();
+  } catch (e) {}
+  try {
+    const res = await fetch('https://ipinfo.io/ip');
+    if (res.ok) return (await res.text()).trim();
+  } catch (e) {}
+  return null;
+}
+
+// --- Adicionar Nova Máquina (com deteccao de pendentes) ---
+async function showAddMachineModal() {
   const ambs = getClientAmbientes(selectedClient);
   let ambOptions = ambs.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
 
+  // Show loading modal first
   showModal(`
-    <div class="modal-title">➕ Nova Máquina</div>
-    <div class="detail-field">
-      <div class="detail-label">Hardware ID (Ex: AS-A1B2C3D4)</div>
-      <input type="text" class="detail-input" id="modal-hwid" placeholder="AS-XXXXXXXX" autocapitalize="characters" style="text-transform: uppercase;">
+    <div class="modal-title">Nova Maquina</div>
+    <div style="text-align:center;padding:30px;">
+      <div class="spinner" style="margin:0 auto 15px;"></div>
+      <p style="color:#ccc;">Buscando maquinas na mesma rede...</p>
     </div>
+  `);
+
+  // Fetch pending machines and admin IP in parallel
+  const [pendingList, myIp] = await Promise.all([
+    fetchPendingMachines(),
+    getMyPublicIP()
+  ]);
+
+  // Separate machines already registered for this client
+  const existingHwIds = new Set();
+  DB.forEach(c => {
+    if (c.Maquinas) c.Maquinas.forEach(m => existingHwIds.add(m.HardwareID));
+  });
+
+  const unregistered = pendingList.filter(p => !existingHwIds.has(p.hardware_id));
+
+  // Categorize: same network vs remote
+  const sameNetwork = [];
+  const remoteNetwork = [];
+  unregistered.forEach(p => {
+    const meta = parsePendingMeta(p.chave_ativacao);
+    const entry = { hwId: p.hardware_id, ...meta, lastSync: p.ultima_sincronizacao };
+    if (myIp && meta.ip === myIp) {
+      sameNetwork.push(entry);
+    } else {
+      remoteNetwork.push(entry);
+    }
+  });
+
+  // Build the detected machines list
+  let detectedHtml = '';
+  if (sameNetwork.length > 0) {
+    detectedHtml += `<div class="detail-label" style="color:#4ECCA3;margin-bottom:8px;">Nesta Rede (IP: ${escapeHtml(myIp || '?')})</div>`;
+    detectedHtml += `<div class="pending-list">`;
+    sameNetwork.forEach((m, i) => {
+      detectedHtml += `
+        <label class="pending-item local" style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:#16213E;border:1px solid #4ECCA3;border-radius:8px;cursor:pointer;">
+          <input type="radio" name="pending-machine" value="${escapeHtml(m.hwId)}" ${i === 0 ? 'checked' : ''} onchange="onPendingSelect(this.value)">
+          <div style="flex:1;">
+            <div style="color:#4ECCA3;font-weight:bold;font-size:14px;">${escapeHtml(m.hwId)}</div>
+            <div style="color:#ccc;font-size:11px;">PC: ${escapeHtml(m.host)} | IP Local: ${escapeHtml(m.localIp)}</div>
+            <div style="color:#888;font-size:10px;">Detectado: ${escapeHtml(m.lastSync || '?')}</div>
+          </div>
+          <span style="color:#4ECCA3;font-size:18px;">&#10004;</span>
+        </label>`;
+    });
+    detectedHtml += `</div>`;
+  }
+
+  if (remoteNetwork.length > 0) {
+    detectedHtml += `<div class="detail-label" style="color:#F39C12;margin-top:12px;margin-bottom:8px;">Outras Redes (Remotas)</div>`;
+    detectedHtml += `<div class="pending-list">`;
+    remoteNetwork.forEach(m => {
+      detectedHtml += `
+        <label class="pending-item remote" style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:#1a1a2e;border:1px solid #555;border-radius:8px;cursor:pointer;opacity:0.7;">
+          <input type="radio" name="pending-machine" value="${escapeHtml(m.hwId)}" onchange="onPendingSelect(this.value)">
+          <div style="flex:1;">
+            <div style="color:#F39C12;font-weight:bold;font-size:14px;">${escapeHtml(m.hwId)}</div>
+            <div style="color:#ccc;font-size:11px;">PC: ${escapeHtml(m.host)} | IP: ${escapeHtml(m.ip)}</div>
+            <div style="color:#888;font-size:10px;">Detectado: ${escapeHtml(m.lastSync || '?')}</div>
+          </div>
+          <span style="color:#F39C12;font-size:14px;">&#9888;</span>
+        </label>`;
+    });
+    detectedHtml += `</div>`;
+  }
+
+  const hasDetected = sameNetwork.length > 0 || remoteNetwork.length > 0;
+  const defaultHwId = sameNetwork.length > 0 ? sameNetwork[0].hwId : '';
+
+  let manualHtml = `
+    <div id="manual-hwid-section" style="display:${hasDetected ? 'none' : 'block'};">
+      <div class="detail-field">
+        <div class="detail-label">Hardware ID (Ex: AS-A1B2C3D4)</div>
+        <input type="text" class="detail-input" id="modal-hwid" placeholder="AS-XXXXXXXX" autocapitalize="characters" style="text-transform: uppercase;">
+      </div>
+    </div>`;
+
+  let toggleBtn = hasDetected ? `
+    <button class="action-btn" onclick="toggleManualHwId()" id="btn-toggle-manual"
+      style="background:transparent;border:1px solid #555;color:#aaa;font-size:12px;width:100%;margin-bottom:12px;">
+      Digitar Hardware ID manualmente
+    </button>` : '';
+
+  showModal(`
+    <div class="modal-title">Nova Maquina</div>
+    ${hasDetected ? `<div style="color:#4ECCA3;font-size:12px;margin-bottom:12px;">Maquinas detectadas automaticamente:</div>` : ''}
+    ${detectedHtml}
+    ${toggleBtn}
+    ${manualHtml}
+    <input type="hidden" id="selected-pending-hwid" value="${escapeHtml(defaultHwId)}">
     <div class="detail-field">
-      <div class="detail-label">Ambiente / Laboratório</div>
+      <div class="detail-label">Ambiente / Laboratorio</div>
       <select class="filter-select" id="modal-ambiente" style="width:100%">${ambOptions}</select>
     </div>
     <div class="renewal-option">
       <input type="checkbox" id="modal-anual" checked>
-      <label for="modal-anual">Renovação anual (+365 dias)</label>
+      <label for="modal-anual">Renovacao anual (+365 dias)</label>
     </div>
     <div class="renewal-input-group">
-      <label>Dias Extras (Bônus / Teste)</label>
+      <label>Dias Extras (Bonus / Teste)</label>
       <input type="number" id="modal-dias-extras" value="0" min="0" inputmode="numeric">
     </div>
     <div class="modal-buttons">
@@ -519,14 +648,41 @@ function showAddMachineModal() {
   `);
 }
 
+function onPendingSelect(hwId) {
+  const el = document.getElementById('selected-pending-hwid');
+  if (el) el.value = hwId;
+}
+
+function toggleManualHwId() {
+  const section = document.getElementById('manual-hwid-section');
+  const btn = document.getElementById('btn-toggle-manual');
+  const hiddenInput = document.getElementById('selected-pending-hwid');
+  if (section.style.display === 'none') {
+    section.style.display = 'block';
+    btn.textContent = 'Usar maquina detectada';
+    // Uncheck all radios
+    document.querySelectorAll('input[name="pending-machine"]').forEach(r => r.checked = false);
+    if (hiddenInput) hiddenInput.value = '';
+  } else {
+    section.style.display = 'none';
+    btn.textContent = 'Digitar Hardware ID manualmente';
+    // Re-select first radio
+    const first = document.querySelector('input[name="pending-machine"]');
+    if (first) { first.checked = true; if (hiddenInput) hiddenInput.value = first.value; }
+  }
+}
+
 async function confirmAddMachine() {
-  const hwId = document.getElementById('modal-hwid').value.toUpperCase().trim();
+  // First check if a pending machine was selected via radio
+  const pendingHwId = document.getElementById('selected-pending-hwid')?.value?.trim() || '';
+  const manualHwId = document.getElementById('modal-hwid')?.value?.toUpperCase().trim() || '';
+  const hwId = pendingHwId || manualHwId;
   const ambiente = document.getElementById('modal-ambiente').value;
   const anual = document.getElementById('modal-anual').checked;
   const diasExtras = parseInt(document.getElementById('modal-dias-extras').value) || 0;
 
   if (!hwId.match(/^AS-[A-F0-9]{8}$/)) {
-    showToast('Hardware ID inválido. Formato: AS-XXXXXXXX', 'error');
+    showToast('Selecione uma maquina detectada ou digite um Hardware ID valido (AS-XXXXXXXX)', 'error');
     return;
   }
 
