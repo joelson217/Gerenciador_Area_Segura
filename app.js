@@ -5,7 +5,7 @@
 
 // --- Configuração Supabase ---
 const SUPABASE_URL = 'https://inndgkbugwegrkbvogew.supabase.co/rest/v1';
-const SUPABASE_KEY = 'sb_secret_H3UecS8QXZmXhlV6OQHlIQ_oIsYQiry';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubmRna2J1Z3dlZ3JrYnZvZ2V3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDQ2ODgsImV4cCI6MjA5NDYyMDY4OH0.8_ZW6I_XbG5UGMEMOKKoY51OA7P97FNdCiBqHs5e00E';
 const HMAC_SECRET = 'AreaSegura@Joelson!2026';
 
 const supaHeaders = {
