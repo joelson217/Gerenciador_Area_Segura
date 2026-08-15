@@ -540,12 +540,31 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
+}
+
+.machine-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.machine-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .machine-lab {
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .machine-status-badge {
@@ -565,8 +584,9 @@ body {
 }
 
 .machine-status-badge.thawed {
-  background: rgba(233, 69, 96, 0.15);
+  background: rgba(233, 69, 96, 0.2);
   color: var(--accent-red);
+  border: 1px solid rgba(233, 69, 96, 0.4);
 }
 
 .machine-status-badge.warning {
@@ -616,13 +636,13 @@ body {
 .machine-detail-value.days-danger { color: var(--accent-red); }
 
 .machine-checkbox {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 22px;
-  height: 22px;
+  position: static;
+  width: 20px;
+  height: 20px;
   accent-color: var(--accent-green);
   cursor: pointer;
+  flex-shrink: 0;
+  margin: 0;
 }
 
 /* --- Action Buttons --- */
@@ -1398,3 +1418,123 @@ input:checked + .switch-slider:before {
 .shake-animation {
   animation: shake 0.4s ease-in-out;
 }
+
+/* ============================================
+   TEMA 2: CLEAN SLATE (Executivo / Minimalista)
+   ============================================ */
+body.theme-slate {
+  --bg-primary: #0B0F17;
+  --bg-secondary: #131A26;
+  --bg-card: #1A2332;
+  --accent-green: #10B981;
+  --accent-orange: #F59E0B;
+  --accent-red: #EF4444;
+  --accent-blue: #3B82F6;
+  --accent-purple: #8B5CF6;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --border-radius: 10px;
+  --border-radius-sm: 6px;
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+body.theme-slate .app-header {
+  background: #131A26;
+  border-bottom: 1px solid #1E293B;
+  box-shadow: none;
+}
+
+body.theme-slate .header-title {
+  background: none;
+  -webkit-text-fill-color: #F8FAFC;
+  color: #F8FAFC;
+  font-weight: 700;
+}
+
+body.theme-slate .dash-card {
+  background: #131A26;
+  border: 1px solid #1E293B;
+  box-shadow: none;
+}
+
+body.theme-slate .dash-card::before {
+  display: none;
+}
+
+body.theme-slate .client-card {
+  background: #131A26;
+  border: 1px solid #1E293B;
+  box-shadow: none;
+}
+
+body.theme-slate .machine-card {
+  background: #131A26;
+  border: 1px solid #1E293B;
+  border-left: 4px solid var(--accent-blue);
+  box-shadow: none;
+}
+
+body.theme-slate .machine-card.status-thawed {
+  background: #1C1318;
+  border: 1px solid #3B1828;
+  border-left: 4px solid var(--accent-red);
+}
+
+body.theme-slate .bottom-nav {
+  background: #131A26;
+  border-top: 1px solid #1E293B;
+  box-shadow: none;
+}
+
+body.theme-slate .detail-section,
+body.theme-slate .settings-card {
+  background: #131A26;
+  border: 1px solid #1E293B;
+  box-shadow: none;
+}
+
+/* --- Theme Switcher Banner --- */
+.theme-switch-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--border-radius);
+  margin-bottom: 18px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.theme-switch-card:hover {
+  border-color: var(--accent-green);
+}
+
+.theme-switch-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-switch-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(78, 204, 163, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(78, 204, 163, 0.3);
+}
+
+body.theme-slate .theme-switch-tag {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60A5FA;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+

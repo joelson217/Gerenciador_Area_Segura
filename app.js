@@ -520,7 +520,7 @@ function renderMachineList() {
     const cloud = cloudStatuses[m.HardwareID];
 
     let statusClass = 'status-frozen';
-    let statusText = '🧊 CONGELADO';
+    let statusText = '🧊 CONGELADA';
     let statusBadgeClass = 'frozen';
     let daysClass = 'days-ok';
     let daysText = `${days} dias`;
@@ -539,11 +539,11 @@ function renderMachineList() {
 
     if (cloud) {
       if (cloud.status_protecao === 'DESCONGELADO') {
-        statusText = '🔥 DESCONGELADO';
+        statusText = '🔥 DESBLOQUEADA';
         statusBadgeClass = 'thawed';
         statusClass = 'status-thawed';
       } else {
-        statusText = '🧊 CONGELADO';
+        statusText = '🧊 CONGELADA';
       }
       if (cloud.chave_ativa && cloud.chave_ativa !== 'Nenhuma' && cloud.chave_ativa !== m.ChaveGerada) {
         statusText = '⚠️ PENDENTE';
@@ -555,10 +555,12 @@ function renderMachineList() {
 
     html += `
       <div class="machine-card ${statusClass}">
-        <input type="checkbox" class="machine-checkbox" data-hw="${m.HardwareID}" ${isSelected} onchange="toggleMachineSelect('${m.HardwareID}', this.checked)">
         <div class="machine-header">
-          <div class="machine-lab">${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
-          <div style="display:flex; align-items:center; gap:8px;">
+          <div class="machine-header-left">
+            <input type="checkbox" class="machine-checkbox" data-hw="${m.HardwareID}" ${isSelected} onchange="toggleMachineSelect('${m.HardwareID}', this.checked)">
+            <div class="machine-lab">${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
+          </div>
+          <div class="machine-header-right">
             <span class="machine-status-badge ${statusBadgeClass}">${statusText}</span>
             <button class="btn-card-trash" onclick="deleteSingleMachine('${m.HardwareID}')" title="Excluir máquina do cadastro" style="background:rgba(233,69,96,0.15); border:1px solid rgba(233,69,96,0.4); color:#FCA5A5; cursor:pointer; font-size:12px; padding:3px 6px; border-radius:6px;">🗑️</button>
           </div>
@@ -998,10 +1000,12 @@ async function confirmFreeze() {
   const cmd = `FREEZE:${persistArg}|BLOCKGAMES:${blockGames}`;
   for (const m of selected) {
     await sendSupabaseCommand(m.HardwareID, cmd);
+    if (!cloudStatuses[m.HardwareID]) cloudStatuses[m.HardwareID] = {};
+    cloudStatuses[m.HardwareID].status_protecao = 'CONGELADO';
   }
   closeModal();
+  renderMachineList();
   showToast(`Comando CONGELAR enviado para ${selected.length} máquina(s)!`, 'success');
-  setTimeout(() => renderMachineList(), 1000);
 }
 
 // --- Descongelar ---
@@ -1010,9 +1014,9 @@ async function thawSelected() {
   if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
 
   showModal(`
-    <div class="modal-title">🔥 Descongelar ${selected.length} Máquina(s)</div>
+    <div class="modal-title">🔥 Descongelar / Desbloquear ${selected.length} Máquina(s)</div>
     <p style="color: var(--text-secondary); font-size: 14px; text-align: center; margin-bottom: 20px;">
-      As máquinas entrarão em Modo Manutenção (descongeladas) na próxima checagem.
+      As máquinas entrarão em Modo Manutenção (descongeladas/desbloqueadas) na próxima checagem.
     </p>
     <div class="modal-buttons">
       <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
@@ -1025,10 +1029,12 @@ async function confirmThaw() {
   const selected = getSelectedMachines();
   for (const m of selected) {
     await sendSupabaseCommand(m.HardwareID, 'THAW');
+    if (!cloudStatuses[m.HardwareID]) cloudStatuses[m.HardwareID] = {};
+    cloudStatuses[m.HardwareID].status_protecao = 'DESCONGELADO';
   }
   closeModal();
+  renderMachineList();
   showToast(`Comando DESCONGELAR enviado para ${selected.length} máquina(s)!`, 'success');
-  setTimeout(() => renderMachineList(), 1000);
 }
 
 // --- Revogar ---
@@ -1067,15 +1073,20 @@ function showUpdateModal() {
   const selected = getSelectedMachines();
   if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
 
+  const defaultUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura.exe';
+
   showModal(`
     <div class="modal-title">🔄 Atualizar ${selected.length} Máquina(s)</div>
+    <p style="color:var(--text-secondary); font-size:12px; margin-bottom:12px; text-align:center;">
+      O novo binário do Área Segura será baixado e instalado silenciosamente no Windows do notebook/PC selecionado.
+    </p>
     <div class="detail-field">
-      <div class="detail-label">URL de Download da Nova Versão</div>
-      <input type="url" class="detail-input" id="modal-update-url" placeholder="https://...">
+      <div class="detail-label">URL Direta do Executável (.exe)</div>
+      <input type="url" class="detail-input" id="modal-update-url" value="${defaultUrl}">
     </div>
     <div class="modal-buttons">
       <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:var(--accent-purple); color:white; text-transform:uppercase;" onclick="confirmUpdate()">Enviar</button>
+      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:var(--accent-purple); color:white; text-transform:uppercase;" onclick="confirmUpdate()">Enviar Atualização</button>
     </div>
   `);
 }
@@ -1771,9 +1782,40 @@ async function checkAppVersion() {
 }
 
 // ============================================
+// Gerenciamento de Tema / Aparência
+// ============================================
+function initTheme() {
+  const savedTheme = localStorage.getItem('gerenciador_theme') || 'cyber';
+  applyTheme(savedTheme);
+}
+
+function applyTheme(theme) {
+  const tag = document.getElementById('current-theme-tag');
+  if (theme === 'slate') {
+    document.body.classList.add('theme-slate');
+    if (tag) tag.textContent = 'Clean Slate (Executivo)';
+    localStorage.setItem('gerenciador_theme', 'slate');
+  } else {
+    document.body.classList.remove('theme-slate');
+    if (tag) tag.textContent = 'Cyber Dark';
+    localStorage.setItem('gerenciador_theme', 'cyber');
+  }
+}
+
+function toggleAppTheme() {
+  const isSlate = document.body.classList.contains('theme-slate');
+  const nextTheme = isSlate ? 'cyber' : 'slate';
+  applyTheme(nextTheme);
+  showToast(`Aparência: ${nextTheme === 'slate' ? 'Clean Slate' : 'Cyber Dark'}`, 'info');
+}
+
+// ============================================
 // Inicialização
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
+  // Inicializar Tema salvo
+  initTheme();
+
   // Service Worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').then(reg => {
