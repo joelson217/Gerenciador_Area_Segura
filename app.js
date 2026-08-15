@@ -160,11 +160,31 @@ async function syncFromCloud() {
 
     // Carregar status reais das máquinas
     cloudStatuses = {};
+    let dbUpdated = false;
     cloudData.forEach(r => {
       if (r.hardware_id !== 'DB_BACKUP') {
         cloudStatuses[r.hardware_id] = r;
+        
+        // Se a máquina estiver no Supabase mas não constar em nenhum cliente local, vincula automaticamente ao primeiro cliente
+        const found = DB.some(c => c.Maquinas && c.Maquinas.some(m => m.HardwareID === r.hardware_id));
+        if (!found && DB.length > 0) {
+          if (!DB[0].Maquinas) DB[0].Maquinas = [];
+          DB[0].Maquinas.push({
+            Id: generateId(),
+            Laboratorio: 'Lab Principal',
+            HardwareID: r.hardware_id,
+            DataExpiracao: r.data_expiracao || '2027-08-15',
+            ChaveGerada: r.chave_ativacao || '',
+            NomeExibicao: r.hardware_id
+          });
+          dbUpdated = true;
+        }
       }
     });
+
+    if (dbUpdated) {
+      localStorage.setItem('area_segura_db', JSON.stringify(DB));
+    }
 
     if (currentPage === 'dashboard') renderDashboard();
     else if (currentPage === 'machines') renderMachineList();
