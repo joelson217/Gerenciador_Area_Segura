@@ -902,7 +902,7 @@ function freezeSelected() {
     <div class="modal-title">🧊 Congelar ${selected.length} Máquina(s)</div>
     <div style="margin-bottom:15px; text-align:left;">
       <label style="color:var(--text-secondary); font-size:12px; font-weight:600; text-transform:uppercase; display:block; margin-bottom:8px;">Pasta Persistente:</label>
-      <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
         <label style="font-size:13px; color:var(--text-primary); display:flex; align-items:center; gap:8px; cursor:pointer;">
           <input type="radio" name="persistAction" value="MANTER" checked onchange="togglePersistInput(false)">
           Manter configuração atual
@@ -911,7 +911,36 @@ function freezeSelected() {
           <input type="radio" name="persistAction" value="ALTERAR" onchange="togglePersistInput(true)">
           Definir / Criar nova pasta
         </label>
-        <input type="text" id="modal-persist-folder" class="detail-input" placeholder="Ex: C:\\Dados_Persistentes" style="display:none; margin-top:4px;" />
+        
+        <div id="persist-presets-container" style="display:none; margin-left:6px; padding:12px; background:rgba(0,0,0,0.25); border:1px solid rgba(78,204,163,0.3); border-radius:8px;">
+          <div style="font-size:11px; color:#4ECCA3; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">Selecione o local pré-definido:</div>
+          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+            <button type="button" class="preset-loc-btn" onclick="selectPersistPreset('DOCS')" style="padding:10px 12px; text-align:left; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:white; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:8px; font-family:'Inter',sans-serif;">
+              <span style="font-size:16px;">📁</span>
+              <div>
+                <div style="font-weight:600; color:#FFFFFF;">Meus Documentos</div>
+                <div style="font-size:10px; color:#A2A2A2;">C:\\Users\\Public\\Documents\\Pasta_Segura</div>
+              </div>
+            </button>
+            <button type="button" class="preset-loc-btn" onclick="selectPersistPreset('DRIVE_C')" style="padding:10px 12px; text-align:left; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:white; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:8px; font-family:'Inter',sans-serif;">
+              <span style="font-size:16px;">💾</span>
+              <div>
+                <div style="font-weight:600; color:#FFFFFF;">Unidade C: (Raiz)</div>
+                <div style="font-size:10px; color:#A2A2A2;">C:\\Pasta_Segura</div>
+              </div>
+            </button>
+            <button type="button" class="preset-loc-btn" onclick="selectPersistPreset('DESKTOP')" style="padding:10px 12px; text-align:left; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:white; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:8px; font-family:'Inter',sans-serif;">
+              <span style="font-size:16px;">🖥️</span>
+              <div>
+                <div style="font-weight:600; color:#FFFFFF;">Área de Trabalho (Desktop)</div>
+                <div style="font-size:10px; color:#A2A2A2;">C:\\Users\\Public\\Desktop\\Pasta_Segura</div>
+              </div>
+            </button>
+          </div>
+          <div style="font-size:11px; color:var(--text-secondary); margin-bottom:4px; font-weight:500;">Caminho da pasta persistente:</div>
+          <input type="text" id="modal-persist-folder" class="detail-input" value="C:\\Users\\Public\\Documents\\Pasta_Segura" style="font-size:12px; margin-top:2px;" />
+        </div>
+
         <label style="font-size:13px; color:#E74C3C; display:flex; align-items:center; gap:8px; cursor:pointer;">
           <input type="radio" name="persistAction" value="REMOVE" onchange="togglePersistInput(false)">
           Remover pasta (Blindar 100%)
@@ -932,8 +961,20 @@ function freezeSelected() {
 }
 
 function togglePersistInput(show) {
-  const el = document.getElementById('modal-persist-folder');
-  if (el) el.style.display = show ? 'block' : 'none';
+  const container = document.getElementById('persist-presets-container');
+  if (container) container.style.display = show ? 'block' : 'none';
+}
+
+function selectPersistPreset(type) {
+  const input = document.getElementById('modal-persist-folder');
+  if (!input) return;
+  if (type === 'DOCS') {
+    input.value = 'C:\\Users\\Public\\Documents\\Pasta_Segura';
+  } else if (type === 'DRIVE_C') {
+    input.value = 'C:\\Pasta_Segura';
+  } else if (type === 'DESKTOP') {
+    input.value = 'C:\\Users\\Public\\Desktop\\Pasta_Segura';
+  }
 }
 
 async function confirmFreeze() {
@@ -1625,6 +1666,37 @@ function renderSettings() {
   }
 }
 
+// Dynamic Version & Auto-Update Check
+let currentAppVersion = '1.4.0';
+
+async function checkAppVersion() {
+  try {
+    const res = await fetch(`./version.json?_t=${Date.now()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.version) {
+        currentAppVersion = data.version;
+        const versionEl = document.getElementById('app-version-display');
+        if (versionEl) versionEl.textContent = `v${data.version} PWA`;
+
+        const savedVersion = localStorage.getItem('area_segura_app_version');
+        if (savedVersion && savedVersion !== data.version) {
+          localStorage.setItem('area_segura_app_version', data.version);
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+              for (let reg of registrations) reg.update();
+            });
+          }
+          showToast(`Aplicativo atualizado para v${data.version}!`, 'success');
+          setTimeout(() => { window.location.reload(); }, 1000);
+        } else if (!savedVersion) {
+          localStorage.setItem('area_segura_app_version', data.version);
+        }
+      }
+    }
+  } catch (e) {}
+}
+
 // ============================================
 // Inicialização
 // ============================================
@@ -1639,6 +1711,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Carregar DB
   loadDB();
   syncFromCloud();
+  checkAppVersion();
 
   // Checar suporte biometria
   checkBiometricsSupport().then(supported => {
@@ -1673,8 +1746,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Auto-refresh a cada 60 segundos
+  // Auto-refresh da nuvem a cada 60s e checagem de versão a cada 30s
   setInterval(() => {
     syncFromCloud();
   }, 60000);
+
+  setInterval(() => {
+    checkAppVersion();
+  }, 30000);
+
+  // Atualizar ao voltar ao foco/visibilidade da aba no celular
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      syncFromCloud();
+      checkAppVersion();
+    }
+  });
 });
+
