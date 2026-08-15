@@ -898,6 +898,8 @@ async function confirmAddMachine() {
     renderMachineList();
     showToast(`Máquina adicionada! Chave: ${key}`, 'success');
   }
+}
+
 // ============================================
 // Ativação Rápida de Máquinas da Nuvem (1 Toque)
 // ============================================
