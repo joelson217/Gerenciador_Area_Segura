@@ -558,7 +558,10 @@ function renderMachineList() {
         <input type="checkbox" class="machine-checkbox" data-hw="${m.HardwareID}" ${isSelected} onchange="toggleMachineSelect('${m.HardwareID}', this.checked)">
         <div class="machine-header">
           <div class="machine-lab">${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
-          <span class="machine-status-badge ${statusBadgeClass}">${statusText}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="machine-status-badge ${statusBadgeClass}">${statusText}</span>
+            <button class="btn-card-trash" onclick="deleteSingleMachine('${m.HardwareID}')" title="Excluir máquina do cadastro" style="background:rgba(233,69,96,0.15); border:1px solid rgba(233,69,96,0.4); color:#FCA5A5; cursor:pointer; font-size:12px; padding:3px 6px; border-radius:6px;">🗑️</button>
+          </div>
         </div>
         <div class="machine-details">
           <div class="machine-detail-item">
@@ -1089,19 +1092,89 @@ async function confirmUpdate() {
   showToast(`Atualização enviada para ${selected.length} máquina(s)!`, 'success');
 }
 
-// --- Desinstalar ---
+// --- Excluir Máquina do Cadastro ---
+function deleteSingleMachine(hwId) {
+  if (!selectedClient || !selectedClient.Maquinas) return;
+  const m = selectedClient.Maquinas.find(x => x.HardwareID === hwId);
+  if (!m) return;
+
+  showModal(`
+    <div class="modal-title" style="color:#E94560;">🗑️ Remover Máquina</div>
+    <p style="color:#ccc; margin-bottom:15px; text-align:center; font-size:13px;">
+      Deseja remover a máquina <strong style="color:white;">${escapeHtml(hwId)}</strong> do cadastro de <strong>${escapeHtml(selectedClient.Instituicao)}</strong>?
+    </p>
+    <div class="modal-buttons">
+      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="modal-btn-confirm" style="background:#E94560;" onclick="confirmDeleteSingleMachine('${escapeHtml(hwId)}')">REMOVER</button>
+    </div>
+  `);
+}
+
+async function confirmDeleteSingleMachine(hwId) {
+  if (!selectedClient || !selectedClient.Maquinas) return;
+  const idx = selectedClient.Maquinas.findIndex(x => x.HardwareID === hwId);
+  if (idx >= 0) {
+    selectedClient.Maquinas.splice(idx, 1);
+    try {
+      await fetch(`${SUPABASE_URL}/licencas?hardware_id=eq.${hwId}`, {
+        method: 'DELETE',
+        headers: supaHeaders
+      });
+    } catch (e) {}
+    saveDB();
+    closeModal();
+    renderMachineList();
+    showToast(`Máquina ${hwId} removida com sucesso!`, 'success');
+  }
+}
+
+function deleteSelectedMachines() {
+  const selected = getSelectedMachines();
+  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
+
+  showModal(`
+    <div class="modal-title" style="color:#E94560;">🗑️ Remover ${selected.length} Máquina(s)</div>
+    <p style="color:#ccc; margin-bottom:15px; text-align:center; font-size:13px;">
+      Deseja remover as <strong>${selected.length} máquina(s)</strong> selecionadas do cadastro deste cliente?
+    </p>
+    <div class="modal-buttons">
+      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="modal-btn-confirm" style="background:#E94560;" onclick="confirmDeleteSelectedMachines()">REMOVER</button>
+    </div>
+  `);
+}
+
+async function confirmDeleteSelectedMachines() {
+  const selected = getSelectedMachines();
+  for (const m of selected) {
+    const idx = selectedClient.Maquinas.findIndex(x => x.HardwareID === m.HardwareID);
+    if (idx >= 0) selectedClient.Maquinas.splice(idx, 1);
+    try {
+      await fetch(`${SUPABASE_URL}/licencas?hardware_id=eq.${m.HardwareID}`, {
+        method: 'DELETE',
+        headers: supaHeaders
+      });
+    } catch (e) {}
+  }
+  saveDB();
+  closeModal();
+  renderMachineList();
+  showToast(`${selected.length} máquina(s) removida(s) do cadastro!`, 'success');
+}
+
+// --- Desinstalar Remotamente do PC ---
 function uninstallSelected() {
   const selected = getSelectedMachines();
   if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
 
   showModal(`
-    <div class="modal-title">🗑️ Desinstalar ${selected.length} Máquina(s)</div>
+    <div class="modal-title">⚡ Desinstalar do PC (${selected.length} máquinas)</div>
     <p style="color: var(--accent-red); font-size: 13px; text-align: center; margin-bottom: 15px; font-weight: 600;">
-      ⚠️ ATENÇÃO: O Área Segura será totalmente removido das máquinas selecionadas e elas reiniciarão!
+      ⚠️ O Área Segura será totalmente removido do Windows no computador e o PC reiniciará!
     </p>
     <div class="detail-field" style="margin-bottom: 20px;">
-      <div class="detail-label" style="color:var(--text-secondary); font-size:12px;">Digite a Senha de Administrador:</div>
-      <input type="password" class="detail-input" id="modal-uninstall-pass" placeholder="Sua senha de admin...">
+      <div class="detail-label" style="color:var(--text-secondary); font-size:12px;">Digite a Senha de Administrador (Padrão: 1A2B3C++e):</div>
+      <input type="password" class="detail-input" id="modal-uninstall-pass" placeholder="Senha padrão: 1A2B3C++e">
     </div>
     <div class="modal-buttons">
       <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
@@ -1113,7 +1186,7 @@ function uninstallSelected() {
 async function confirmUninstall() {
   const pass = document.getElementById('modal-uninstall-pass')?.value || '';
   if (!pass) {
-    showToast('Digite a senha de administrador', 'error');
+    showToast('Digite a senha de administrador (Padrão: 1A2B3C++e)', 'error');
     return;
   }
 
