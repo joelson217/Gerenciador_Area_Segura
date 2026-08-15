@@ -102,17 +102,6 @@ function loadDB() {
         "Maquinas": [],
         "NomeExibicao": "Casa",
         "CorAlerta": "White"
-      },
-      {
-        "Id": "5d1f228b-7f16-4f75-9812-75f77b0ac75b",
-        "Instituicao": "Novo Cliente (2)",
-        "Localidade": "",
-        "Responsavel": "",
-        "Contato": "",
-        "Ambientes": ["Lab Principal"],
-        "Maquinas": [],
-        "NomeExibicao": "Novo Cliente (2)",
-        "CorAlerta": "White"
       }
     ];
     saveDB();
@@ -1325,37 +1314,25 @@ function uninstallSelected() {
   if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
 
   showModal(`
-    <div class="modal-title">⚡ Desinstalar do PC (${selected.length} máquinas)</div>
-    <p style="color: var(--accent-red); font-size: 13px; text-align: center; margin-bottom: 15px; font-weight: 600;">
-      ⚠️ O Área Segura será totalmente removido do Windows no computador e o PC reiniciará!
+    <div class="modal-title" style="color:#E94560;">⚡ Desinstalar Remotamente (${selected.length} máquinas)</div>
+    <p style="color: #ccc; font-size: 14px; text-align: center; margin-bottom: 20px;">
+      Deseja realmente <strong>DESINSTALAR</strong> o Área Segura dos computadores selecionados?<br>
+      <span style="font-size:12px; color:var(--text-secondary); display:block; margin-top:8px;">O programa será removido do Windows, a internet será 100% liberada e o computador será reiniciado.</span>
     </p>
-    <div class="detail-field" style="margin-bottom: 20px;">
-      <div class="detail-label" style="color:var(--text-secondary); font-size:12px;">Digite a Senha de Administrador (Padrão: 1A2B3C++e):</div>
-      <input type="password" class="detail-input" id="modal-uninstall-pass" placeholder="Senha padrão: 1A2B3C++e">
-    </div>
     <div class="modal-buttons">
       <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:#C0392B; color:white; text-transform:uppercase;" onclick="confirmUninstall()">Desinstalar</button>
+      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:#E94560; color:white; text-transform:uppercase;" onclick="confirmUninstall()">Confirmar Desinstalação</button>
     </div>
   `);
 }
 
 async function confirmUninstall() {
-  const pass = document.getElementById('modal-uninstall-pass')?.value || '';
-  if (!pass) {
-    showToast('Digite a senha de administrador (Padrão: 1A2B3C++e)', 'error');
-    return;
-  }
-
-  const savedAdminPass = localStorage.getItem('area_segura_admin_pass') || '1A2B3C++e';
-  if (pass !== savedAdminPass && pass !== '1A2B3C++e') {
-    showToast('Senha incorreta! Operação cancelada.', 'error');
-    return;
-  }
-
   const selected = getSelectedMachines();
   for (const m of selected) {
     await sendSupabaseCommand(m.HardwareID, 'UNINSTALL');
+    if (cloudStatuses[m.HardwareID]) {
+      cloudStatuses[m.HardwareID].status_protecao = 'DESINSTALADO';
+    }
   }
   closeModal();
   showToast(`Comando de DESINSTALAÇÃO enviado para ${selected.length} máquina(s)!`, 'success');
