@@ -165,6 +165,9 @@ async function syncFromCloud() {
         cloudStatuses[r.hardware_id] = r;
       }
     });
+
+    if (currentPage === 'dashboard') renderDashboard();
+    else if (currentPage === 'machines') renderMachineList();
   } catch (e) { /* offline */ }
 }
 
@@ -273,7 +276,10 @@ function renderPendingMachinesBanner() {
   });
 
   const pendingList = Object.values(cloudStatuses).filter(s => 
-    s.hardware_id && s.hardware_id !== 'DB_BACKUP' && !existingHwIds.has(s.hardware_id)
+    s.hardware_id && 
+    s.hardware_id !== 'DB_BACKUP' && 
+    !existingHwIds.has(s.hardware_id) && 
+    (s.chave_ativacao && s.chave_ativacao.startsWith('PENDENTE'))
   );
 
   if (pendingList.length === 0) {
