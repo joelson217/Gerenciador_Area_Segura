@@ -267,8 +267,55 @@ function renderDashboard() {
   if (stats.expiring > 0) expiringCard.classList.add('has-alert');
   else expiringCard.classList.remove('has-alert');
 
+  // Banner de Máquinas Detectadas na Nuvem
+  renderPendingMachinesBanner();
+
   // Clientes recentes no dashboard
   renderRecentClients();
+}
+
+function renderPendingMachinesBanner() {
+  const container = document.getElementById('pending-machines-banner');
+  if (!container) return;
+
+  const existingHwIds = new Set();
+  DB.forEach(c => {
+    if (c.Maquinas) c.Maquinas.forEach(m => existingHwIds.add(m.HardwareID));
+  });
+
+  const pendingList = Object.values(cloudStatuses).filter(s => 
+    s.hardware_id && s.hardware_id !== 'DB_BACKUP' && !existingHwIds.has(s.hardware_id)
+  );
+
+  if (pendingList.length === 0) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    return;
+  }
+
+  let html = '';
+  pendingList.forEach(p => {
+    const meta = parsePendingMeta(p.chave_ativacao);
+    const displayName = meta.host !== 'Desconhecido' ? meta.host : p.hardware_id;
+    html += `
+      <div class="pending-alert-card">
+        <div class="pending-alert-header">
+          <span class="pulse-dot"></span>
+          <span class="pending-alert-title">⚡ Nova Máquina Conectada na Nuvem!</span>
+        </div>
+        <div class="pending-alert-body">
+          <div class="pending-machine-name">💻 ${escapeHtml(displayName)}</div>
+          <div class="pending-machine-meta">ID: <b>${escapeHtml(p.hardware_id)}</b> • IP: ${escapeHtml(meta.ip)}</div>
+        </div>
+        <button class="btn-activate-quick" onclick="quickActivateModal('${escapeHtml(p.hardware_id)}', '${escapeHtml(meta.host)}')">
+          ⚡ ATIVAR MÁQUINA (1 Toque)
+        </button>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  container.style.display = 'block';
 }
 
 function renderRecentClients() {
@@ -851,6 +898,103 @@ async function confirmAddMachine() {
     renderMachineList();
     showToast(`Máquina adicionada! Chave: ${key}`, 'success');
   }
+// ============================================
+// Ativação Rápida de Máquinas da Nuvem (1 Toque)
+// ============================================
+async function quickActivateModal(hwId, host) {
+  if (DB.length === 0) {
+    showToast('Cadastre um cliente primeiro para vincular a máquina.', 'warning');
+    return;
+  }
+
+  let clientOptions = DB.map(c => `<option value="${c.Id}">${escapeHtml(c.Instituicao || 'Sem Nome')}</option>`).join('');
+
+  showModal(`
+    <div class="modal-title">⚡ Ativação Rápida de Máquina</div>
+    <div style="font-size:12px; color:var(--text-muted); margin-bottom:15px;">
+      A máquina será ativada, licenciada e conectada na nuvem instantaneamente.
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Hardware ID</label>
+      <input type="text" class="form-input" value="${escapeHtml(hwId)}" readonly style="color:var(--accent-green); font-weight:bold;">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Nome / Identificação</label>
+      <input type="text" class="form-input" id="quick-mac-name" value="${escapeHtml(host !== 'Desconhecido' && host ? host : hwId)}">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Vincular ao Cliente</label>
+      <select class="form-input" id="quick-mac-client">${clientOptions}</select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Ambiente / Laboratório</label>
+      <input type="text" class="form-input" id="quick-mac-amb" value="Lab Principal">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Período de Validade</label>
+      <select class="form-input" id="quick-mac-period">
+        <option value="365" selected>1 Ano</option>
+        <option value="730">2 Anos</option>
+        <option value="1825">5 Anos</option>
+        <option value="3650">10 Anos (Vitalícia)</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="confirmQuickActivate('${escapeHtml(hwId)}')">✅ Ativar Agora</button>
+    </div>
+  `);
+}
+
+async function confirmQuickActivate(hwId) {
+  const name = document.getElementById('quick-mac-name').value.trim() || hwId;
+  const clientId = document.getElementById('quick-mac-client').value;
+  const ambiente = document.getElementById('quick-mac-amb').value.trim() || 'Lab Principal';
+  const periodDays = parseInt(document.getElementById('quick-mac-period').value) || 365;
+
+  const client = DB.find(c => c.Id === clientId);
+  if (!client) {
+    showToast('Cliente não encontrado.', 'error');
+    return;
+  }
+
+  const exp = new Date();
+  exp.setDate(exp.getDate() + periodDays);
+  const expDateStr = formatDateISO(exp);
+
+  const key = await getActivationKey(hwId, expDateStr);
+
+  if (!client.Maquinas) client.Maquinas = [];
+  
+  // Se já existe no cliente, atualiza; senão, adiciona
+  const existingIdx = client.Maquinas.findIndex(m => m.HardwareID === hwId);
+  const newMachineObj = {
+    Id: generateId(),
+    Laboratorio: ambiente,
+    HardwareID: hwId,
+    DataExpiracao: expDateStr,
+    ChaveGerada: key,
+    NomeExibicao: name
+  };
+
+  if (existingIdx >= 0) {
+    client.Maquinas[existingIdx] = newMachineObj;
+  } else {
+    client.Maquinas.push(newMachineObj);
+  }
+
+  await syncSupabase(hwId, key, expDateStr);
+  await saveDB();
+
+  closeModal();
+  showToast(`🎉 Máquina "${name}" ativada com sucesso!`, 'success');
+  renderDashboard();
 }
 
 // --- Renovar em Lote ---

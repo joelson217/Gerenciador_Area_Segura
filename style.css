@@ -1538,3 +1538,81 @@ body.theme-slate .theme-switch-tag {
   border-color: rgba(59, 130, 246, 0.3);
 }
 
+/* --- Pending Cloud Machine Alert Card --- */
+.pending-alert-card {
+  background: linear-gradient(135deg, rgba(78, 204, 163, 0.12), rgba(15, 52, 96, 0.4));
+  border: 1px solid rgba(78, 204, 163, 0.4);
+  border-radius: var(--border-radius);
+  padding: 16px;
+  margin-bottom: 20px;
+  animation: slideInDown 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.pending-alert-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4ECCA3;
+  box-shadow: 0 0 10px #4ECCA3;
+  animation: pulseAnimation 1.5s infinite;
+}
+
+@keyframes pulseAnimation {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(78, 204, 163, 0.7); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 8px rgba(78, 204, 163, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(78, 204, 163, 0); }
+}
+
+.pending-alert-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #4ECCA3;
+}
+
+.pending-alert-body {
+  margin-bottom: 14px;
+}
+
+.pending-machine-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.pending-machine-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.btn-activate-quick {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent-green);
+  color: #1A1A2E;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: var(--transition);
+}
+
+.btn-activate-quick:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+
