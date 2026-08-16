@@ -12,12 +12,32 @@ const LICENSE_API_URL = `${SUPABASE_PROJECT_URL}/functions/v1/license-api`;
 const PIN_SALT = '@AreaSegura_Salt_2026!';
 
 function getAdminToken() {
-  let token = localStorage.getItem('area_segura_admin_token');
+  const token = localStorage.getItem('area_segura_admin_token');
   if (!token) {
-    token = (prompt('Token de Administrador — cole aqui (evite digitar, para não errar):') || '').trim();
-    if (token) localStorage.setItem('area_segura_admin_token', token);
+    showToast('Configure o Token de Administrador em Ajustes antes de fazer isso.', 'warning');
   }
-  return token;
+  return token || '';
+}
+
+function saveAdminTokenFromSettings() {
+  const input = document.getElementById('admin-token-input');
+  const token = input?.value.trim() || '';
+  if (!token) {
+    showToast('Cole o token antes de salvar.', 'warning');
+    return;
+  }
+  localStorage.setItem('area_segura_admin_token', token);
+  if (input) input.value = '';
+  renderAdminTokenStatus();
+  showToast('Token de administrador salvo neste aparelho.', 'success');
+}
+
+function renderAdminTokenStatus() {
+  const statusEl = document.getElementById('admin-token-status');
+  if (!statusEl) return;
+  const hasToken = !!localStorage.getItem('area_segura_admin_token');
+  statusEl.textContent = hasToken ? 'Token configurado neste aparelho.' : 'Nenhum token configurado ainda.';
+  statusEl.style.color = hasToken ? 'var(--accent-green)' : 'var(--text-muted)';
 }
 
 async function callLicenseApi(action, payload = {}) {
@@ -1118,6 +1138,7 @@ function startPinChange() {
 }
 
 function renderSettings() {
+  renderAdminTokenStatus();
   const isPinEnabled = localStorage.getItem('security_pin_enabled') === 'true';
   const isBioEnabled = localStorage.getItem('security_bio_enabled') === 'true';
 
@@ -1142,7 +1163,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.1.4';
+let currentAppVersion = '2.1.5';
 
 async function checkAppVersion() {
   try {

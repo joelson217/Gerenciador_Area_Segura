@@ -351,6 +351,18 @@
           </div>
         </div>
 
+        <!-- Token de Administrador (autoriza ações na Edge Function) -->
+        <div class="settings-card">
+          <div class="settings-group-title"><svg class="icon"><use href="#icon-key"/></svg> Acesso Administrativo</div>
+          <p class="update-subtext" style="text-align:left; margin-bottom:12px;">Autoriza ações administrativas (salvar clientes, gerar licenças, comandos remotos). Configure uma vez só — depois disso, seu PIN ou biometria já protege o acesso ao app, e esse token fica salvo neste aparelho.</p>
+          <div class="detail-field">
+            <label class="detail-label" for="admin-token-input">Token de Administrador</label>
+            <input type="password" class="detail-input" id="admin-token-input" placeholder="Cole aqui o token" autocomplete="off">
+          </div>
+          <button class="btn-secondary" onclick="saveAdminTokenFromSettings()">Salvar Token</button>
+          <p class="update-subtext" id="admin-token-status"></p>
+        </div>
+
         <!-- Sincronização & Informações do Servidor -->
         <div class="settings-card">
           <div class="settings-group-title"><svg class="icon"><use href="#icon-cloud"/></svg> Nuvem &amp; Atualização do Sistema</div>
@@ -361,7 +373,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Versão do Gerenciador:</span>
-              <span class="info-value-highlight" id="app-version-display">v2.1.4 Pro Enterprise</span>
+              <span class="info-value-highlight" id="app-version-display">v2.1.5 Pro Enterprise</span>
             </div>
             <div class="info-row">
               <span class="info-label">Criptografia de Licenças:</span>
