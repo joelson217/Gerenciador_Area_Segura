@@ -1,9 +1,9 @@
 // ============================================
 // ÁREA SEGURA PRO - SERVICE WORKER
-// Versão: 2.1.6 Pro Enterprise
+// Versão: 2.2.0 Pro Enterprise
 // ============================================
 
-const CACHE_NAME = 'gerenciador-v2.1.6';
+const CACHE_NAME = 'gerenciador-v2.2.0';
 const ASSETS = [
   './',
   './index.html',
@@ -57,7 +57,9 @@ self.addEventListener('fetch', event => {
     url.includes('version.json') ||
     url.includes('supabase.co') ||
     url.includes('api.ipify.org') ||
-    url.includes('ipinfo.io')
+    url.includes('ipinfo.io') ||
+    url.includes('portal.html') ||
+    url.includes('portal.js')
   ) {
     event.respondWith(
       fetch(event.request, { cache: 'no-store' }).catch(() => caches.match(event.request))

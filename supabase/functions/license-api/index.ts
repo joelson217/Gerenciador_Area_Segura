@@ -299,6 +299,28 @@ async function handlePortalRefresh(body: any) {
   return json({ ok: true, client: safeClient, statuses });
 }
 
+// Comando remoto disparado pelo próprio cliente no portal (congelar/descongelar
+// só as máquinas dele). Autenticado pelo token de sessão do portal, não pelo
+// admin_token — e restrito a comandos inofensivos, nunca REVOKE/UNINSTALL/UPDATE.
+const PORTAL_ALLOWED_COMMANDS = new Set(["FREEZE|MANTER", "THAW"]);
+async function handlePortalCommand(body: any) {
+  const clientId = await verifyPortalToken(String(body.token || ""));
+  if (!clientId) return json({ error: "sessão expirada" }, 401);
+
+  const comando = String(body.comando || "");
+  const hardwareId = String(body.hardware_id || "");
+  if (!PORTAL_ALLOWED_COMMANDS.has(comando)) return json({ error: "comando não permitido" }, 403);
+
+  const client = await findClientByPortalKey(clientId);
+  if (!client) return json({ error: "cliente não encontrado" }, 404);
+
+  const owns = (client.Maquinas || []).some((m: any) => m.HardwareID === hardwareId);
+  if (!owns) return json({ error: "máquina não pertence a este cliente" }, 403);
+
+  await patchLicenseRow(hardwareId, { comando_remoto: comando });
+  return json({ ok: true });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
@@ -329,6 +351,8 @@ Deno.serve(async (req) => {
       return handlePortalLogin(body);
     case "portal-refresh":
       return handlePortalRefresh(body);
+    case "portal-command":
+      return handlePortalCommand(body);
     default:
       return json({ error: "action desconhecida" }, 400);
   }

@@ -65,8 +65,6 @@ let DB = [];
 let selectedClient = null;
 let cloudStatuses = {};
 let currentPage = 'dashboard';
-let isClientPortal = false;
-let clientPortalTarget = null;
 
 // Controle de Força Bruta no PIN
 let failedPinAttempts = 0;
@@ -136,10 +134,6 @@ function loadDB() {
 let initialSyncPromise = null;
 
 async function saveDB() {
-  if (isClientPortal) {
-    // Modo portal do cliente: salva apenas no estado local sem sobrescrever backup master
-    return;
-  }
   if (initialSyncPromise) {
     await initialSyncPromise;
     initialSyncPromise = null;
@@ -157,7 +151,6 @@ async function saveDB() {
 }
 
 async function syncFromCloud() {
-  if (isClientPortal) return; // portal usa portal-login/portal-refresh, nunca o banco inteiro
   const result = await callLicenseApi('admin-sync', { admin_token: getAdminToken() });
   if (result.error) return;
 
@@ -240,10 +233,6 @@ function navigateTo(page, data) {
 }
 
 function goBack() {
-  if (isClientPortal) {
-    exitClientPortal();
-    return;
-  }
   if (currentPage === 'machines') {
     navigateTo('detail');
   } else if (currentPage === 'detail') {
@@ -419,9 +408,11 @@ function renderClientDetail() {
   if (pUserInput) pUserInput.value = selectedClient.PortalUser || '';
   if (pPassInput) pPassInput.value = selectedClient.PortalPass || '';
 
+  // Link fica numa página separada (portal.html), sem nenhum código do
+  // Gerenciador admin — assim ninguém "tira uma parte" do link do cliente
+  // e chega no meu painel; é uma URL diferente desde o início.
   const portalKey = selectedClient.PortalUser || selectedClient.Id;
-  const baseUrl = window.location.origin + window.location.pathname;
-  const portalUrl = `${baseUrl}?portal=${encodeURIComponent(portalKey)}`;
+  const portalUrl = `${window.location.origin}/portal.html?u=${encodeURIComponent(portalKey)}`;
   if (pLinkInput) pLinkInput.value = portalUrl;
 
   if (pBadge) {
@@ -1177,7 +1168,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.1.6';
+let currentAppVersion = '2.2.0';
 
 async function checkAppVersion() {
   try {
@@ -1264,134 +1255,9 @@ function toggleAppTheme() {
 }
 
 // ============================================
-// Portal Exclusivo do Cliente (Isolamento de Segurança)
-// ============================================
-let portalSessionToken = null;
-
-function getPortalKeyFromUrl() {
-  const urlParams = new URLSearchParams(window.location.search);
-  return urlParams.get('portal') || urlParams.get('cliente');
-}
-
-// Quando o app já está aberto em segundo plano (instalado como PWA) e o
-// usuário toca num link de portal diferente, o navegador às vezes só traz a
-// janela existente pra frente em vez de recarregar a página do zero — o que
-// deixava a tela presa mostrando os dados do admin. Isso reavalia a URL
-// sempre que o app volta ao primeiro plano e troca de modo se necessário.
-let activePortalKey = undefined;
-
-function checkPortalRouting() {
-  const key = getPortalKeyFromUrl();
-  if (key === activePortalKey) return;
-  activePortalKey = key;
-
-  if (key) {
-    isClientPortal = true;
-    portalSessionToken = null;
-    selectedClient = null;
-    document.getElementById('splash-screen')?.classList.add('hidden');
-    document.getElementById('app')?.classList.add('visible');
-    initClientPortal(key);
-  } else if (isClientPortal) {
-    // O link do portal saiu da URL (ex: usuário voltou pro app normal) —
-    // mais seguro recarregar do zero do que tentar reverter o estado na mão.
-    window.location.reload();
-  }
-}
-
-// Mostra a tela de login do portal (usuário + senha). O navegador do
-// cliente nunca baixa o array com os outros clientes, só o resultado deste.
-function initClientPortal(portalKey) {
-  const screen = document.getElementById('portal-login-screen');
-  const userInput = document.getElementById('portal-login-user');
-  const errorEl = document.getElementById('portal-login-error');
-  if (errorEl) errorEl.textContent = '';
-  // Pré-preenche o usuário se o link já veio com o identificador do cliente
-  // (mas o campo continua editável — o login sempre exige usuário + senha).
-  if (userInput) userInput.value = portalKey && !portalKey.includes('-') ? portalKey : '';
-  if (screen) screen.style.display = 'flex';
-  setTimeout(() => {
-    const target = userInput && userInput.value ? document.getElementById('portal-login-pass') : userInput;
-    target?.focus();
-  }, 50);
-}
-
-async function submitPortalLogin() {
-  const userEl = document.getElementById('portal-login-user');
-  const passEl = document.getElementById('portal-login-pass');
-  const errorEl = document.getElementById('portal-login-error');
-  const user = userEl?.value.trim() || '';
-  const pass = passEl?.value || '';
-
-  if (!user) {
-    if (errorEl) errorEl.textContent = 'Digite o usuário de acesso.';
-    userEl?.focus();
-    return;
-  }
-
-  const result = await callLicenseApi('portal-login', { portal_key: user, portal_pass: pass });
-
-  if (result.error || !result.client) {
-    if (errorEl) errorEl.textContent = result.error === 'Senha incorreta.' ? 'Usuário ou senha incorretos.' : 'Portal não encontrado. Confira o usuário digitado.';
-    passEl?.focus();
-    return;
-  }
-
-  const screen = document.getElementById('portal-login-screen');
-  if (screen) screen.style.display = 'none';
-  portalSessionToken = result.token;
-  cloudStatuses = { ...cloudStatuses, ...(result.statuses || {}) };
-  enterClientPortal(result.client);
-}
-
-async function portalRefresh() {
-  if (!portalSessionToken) return;
-  const result = await callLicenseApi('portal-refresh', { token: portalSessionToken });
-  if (result.client) {
-    selectedClient = result.client;
-    cloudStatuses = { ...cloudStatuses, ...(result.statuses || {}) };
-    if (currentPage === 'machines') renderMachineList();
-  }
-}
-
-function enterClientPortal(client) {
-  isClientPortal = true;
-  selectedClient = client;
-
-  // Sanitização de memória: no modo cliente, apenas os dados deste cliente ficam no escopo
-  const titleEl = document.querySelector('.header-title');
-  if (titleEl) {
-    titleEl.innerHTML = `${escapeHtml(client.Instituicao || 'Portal')} <span class="portal-badge">Cliente</span>`;
-  }
-
-  const backBtn = document.querySelector('.header-back');
-  if (backBtn) {
-    backBtn.innerHTML = '<svg class="icon"><use href="#icon-log-out"></use></svg> Sair';
-    backBtn.classList.add('active');
-    backBtn.onclick = exitClientPortal;
-  }
-
-  const bottomNav = document.querySelector('.bottom-nav');
-  if (bottomNav) bottomNav.style.display = 'none';
-
-  navigateTo('machines', client);
-  showToast(`Bem-vindo ao painel de ${client.Instituicao}!`, 'success');
-}
-
-function exitClientPortal() {
-  if (confirm('Deseja sair do Portal do Cliente?')) {
-    isClientPortal = false;
-    selectedClient = null;
-    portalSessionToken = null;
-    window.location.href = window.location.origin + window.location.pathname;
-  }
-}
-
-// ============================================
 // Importar / Exportar Banco
 // ============================================
 function exportDB() {
-  if (isClientPortal) return;
   const jsonStr = JSON.stringify(DB, null, 2);
   const blob = new Blob([jsonStr], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -1404,7 +1270,6 @@ function exportDB() {
 }
 
 function importDB() {
-  if (isClientPortal) return;
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.json';
@@ -1492,12 +1357,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   loadDB();
 
-  // Detecta o modo portal ANTES de qualquer chamada admin — um visitante do
-  // portal nunca deve disparar sincronização do banco inteiro (admin-sync).
-  const portalKeyFromUrl = getPortalKeyFromUrl();
-  isClientPortal = !!portalKeyFromUrl;
-  activePortalKey = portalKeyFromUrl;
-
   // Registrar Service Worker com tratamento de updates
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').then(reg => {
@@ -1526,20 +1385,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // Checagem de versão
   checkAppVersion();
 
-  // Sincronização em segundo plano (só fora do portal — portal usa portal-login)
-  if (!isClientPortal) {
-    initialSyncPromise = syncFromCloud();
-    fetchCloudStatuses();
-  }
+  // Sincronização em segundo plano
+  initialSyncPromise = syncFromCloud();
+  fetchCloudStatuses();
 
   // Splash Screen e Rota Inicial
   setTimeout(() => {
     document.getElementById('splash-screen').classList.add('hidden');
     document.getElementById('app').classList.add('visible');
 
-    if (portalKeyFromUrl) {
-      initClientPortal(portalKeyFromUrl);
-    } else if (localStorage.getItem('security_pin_enabled') === 'true') {
+    if (localStorage.getItem('security_pin_enabled') === 'true') {
       showLockScreen('unlock');
     } else {
       navigateTo('dashboard');
@@ -1563,12 +1418,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sincronização periódica a cada 15 segundos
   setInterval(() => {
-    if (isClientPortal) {
-      portalRefresh();
-    } else {
-      fetchCloudStatuses();
-      if (currentPage === 'machines') renderMachineList();
-    }
+    fetchCloudStatuses();
+    if (currentPage === 'machines') renderMachineList();
   }, 15000);
 
   // Checar novas versões a cada 60 segundos
@@ -1576,16 +1427,11 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAppVersion();
   }, 60000);
 
-  // Recarregar status quando a aba voltar ao foco — e reavaliar se a URL
-  // mudou de link de portal (janela reaproveitada em vez de recarregada).
+  // Recarregar status quando a aba voltar ao foco
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      checkPortalRouting();
-      if (isClientPortal) portalRefresh();
-      else fetchCloudStatuses();
+      fetchCloudStatuses();
       checkAppVersion();
     }
   });
-  window.addEventListener('pageshow', checkPortalRouting);
-  window.addEventListener('focus', checkPortalRouting);
 });
