@@ -1142,7 +1142,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.1.3';
+let currentAppVersion = '2.1.4';
 
 async function checkAppVersion() {
   try {
@@ -1236,6 +1236,32 @@ let portalSessionToken = null;
 function getPortalKeyFromUrl() {
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get('portal') || urlParams.get('cliente');
+}
+
+// Quando o app já está aberto em segundo plano (instalado como PWA) e o
+// usuário toca num link de portal diferente, o navegador às vezes só traz a
+// janela existente pra frente em vez de recarregar a página do zero — o que
+// deixava a tela presa mostrando os dados do admin. Isso reavalia a URL
+// sempre que o app volta ao primeiro plano e troca de modo se necessário.
+let activePortalKey = undefined;
+
+function checkPortalRouting() {
+  const key = getPortalKeyFromUrl();
+  if (key === activePortalKey) return;
+  activePortalKey = key;
+
+  if (key) {
+    isClientPortal = true;
+    portalSessionToken = null;
+    selectedClient = null;
+    document.getElementById('splash-screen')?.classList.add('hidden');
+    document.getElementById('app')?.classList.add('visible');
+    initClientPortal(key);
+  } else if (isClientPortal) {
+    // O link do portal saiu da URL (ex: usuário voltou pro app normal) —
+    // mais seguro recarregar do zero do que tentar reverter o estado na mão.
+    window.location.reload();
+  }
 }
 
 // Mostra a tela de login do portal (usuário + senha). O navegador do
@@ -1435,6 +1461,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // portal nunca deve disparar sincronização do banco inteiro (admin-sync).
   const portalKeyFromUrl = getPortalKeyFromUrl();
   isClientPortal = !!portalKeyFromUrl;
+  activePortalKey = portalKeyFromUrl;
 
   // Registrar Service Worker com tratamento de updates
   if ('serviceWorker' in navigator) {
@@ -1514,12 +1541,16 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAppVersion();
   }, 60000);
 
-  // Recarregar status quando a aba voltar ao foco
+  // Recarregar status quando a aba voltar ao foco — e reavaliar se a URL
+  // mudou de link de portal (janela reaproveitada em vez de recarregada).
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
+      checkPortalRouting();
       if (isClientPortal) portalRefresh();
       else fetchCloudStatuses();
       checkAppVersion();
     }
   });
+  window.addEventListener('pageshow', checkPortalRouting);
+  window.addEventListener('focus', checkPortalRouting);
 });
