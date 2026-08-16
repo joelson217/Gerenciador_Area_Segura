@@ -361,7 +361,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Versão do Gerenciador:</span>
-              <span class="info-value-highlight" id="app-version-display">v2.1.0 Pro Enterprise</span>
+              <span class="info-value-highlight" id="app-version-display">v2.1.1 Pro Enterprise</span>
             </div>
             <div class="info-row">
               <span class="info-label">Criptografia de Licenças:</span>
@@ -401,6 +401,38 @@
       </button>
     </nav>
 
+  </div>
+
+  <!-- ============================================ -->
+  <!-- MODAL: NOVO CLIENTE -->
+  <!-- ============================================ -->
+  <div id="modal-new-client" class="modal-overlay" style="display:none" onclick="if(event.target===this) closeNewClientModal()">
+    <div class="modal-content">
+      <div class="modal-handle"></div>
+      <div class="modal-title">Novo Cliente</div>
+
+      <div class="detail-field">
+        <label class="detail-label" for="new-client-instituicao">Instituição / Escola / Empresa *</label>
+        <input type="text" class="detail-input" id="new-client-instituicao" placeholder="Nome da instituição" autocomplete="off" onkeydown="if(event.key==='Enter') confirmNewClient()">
+      </div>
+      <div class="detail-field">
+        <label class="detail-label" for="new-client-responsavel">Responsável pelo Laboratório</label>
+        <input type="text" class="detail-input" id="new-client-responsavel" placeholder="Nome do responsável" autocomplete="off" onkeydown="if(event.key==='Enter') confirmNewClient()">
+      </div>
+      <div class="detail-field">
+        <label class="detail-label" for="new-client-localidade">Localidade / Cidade / Endereço</label>
+        <input type="text" class="detail-input" id="new-client-localidade" placeholder="Cidade, Bairro, Endereço" autocomplete="off" onkeydown="if(event.key==='Enter') confirmNewClient()">
+      </div>
+      <div class="detail-field">
+        <label class="detail-label" for="new-client-contato">Contato Direto (WhatsApp / Telefone)</label>
+        <input type="text" class="detail-input" id="new-client-contato" placeholder="(DDD) 99999-9999" autocomplete="off" onkeydown="if(event.key==='Enter') confirmNewClient()">
+      </div>
+
+      <div class="modal-buttons">
+        <button class="modal-btn-cancel" onclick="closeNewClientModal()">Cancelar</button>
+        <button class="modal-btn-confirm" onclick="confirmNewClient()">Criar Cliente</button>
+      </div>
+    </div>
   </div>
 
   <!-- ============================================ -->

@@ -765,23 +765,44 @@ function showDeleteClientModal() {
 }
 
 function showNewClientModal() {
-  const name = prompt('Nome da Instituição / Escola / Empresa:');
-  if (name && name.trim()) {
-    const newClient = {
-      Id: generateId(),
-      Instituicao: name.trim(),
-      Responsavel: prompt('Responsável:') || '',
-      Localidade: prompt('Localidade / Endereço:') || '',
-      Contato: prompt('Contato (WhatsApp / Telefone):') || '',
-      Ambientes: ['Lab Principal'],
-      Maquinas: [],
-      NomeExibicao: name.trim()
-    };
-    DB.unshift(newClient);
-    saveDB();
-    showToast(`Cliente "${newClient.Instituicao}" criado!`, 'success');
-    navigateTo('detail', newClient);
+  ['new-client-instituicao', 'new-client-responsavel', 'new-client-localidade', 'new-client-contato'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const modal = document.getElementById('modal-new-client');
+  if (modal) {
+    modal.style.display = 'flex';
+    setTimeout(() => document.getElementById('new-client-instituicao')?.focus(), 50);
   }
+}
+
+function closeNewClientModal() {
+  const modal = document.getElementById('modal-new-client');
+  if (modal) modal.style.display = 'none';
+}
+
+function confirmNewClient() {
+  const name = document.getElementById('new-client-instituicao')?.value.trim() || '';
+  if (!name) {
+    showToast('Digite o nome da instituição.', 'warning');
+    document.getElementById('new-client-instituicao')?.focus();
+    return;
+  }
+  const newClient = {
+    Id: generateId(),
+    Instituicao: name,
+    Responsavel: document.getElementById('new-client-responsavel')?.value.trim() || '',
+    Localidade: document.getElementById('new-client-localidade')?.value.trim() || '',
+    Contato: document.getElementById('new-client-contato')?.value.trim() || '',
+    Ambientes: ['Lab Principal'],
+    Maquinas: [],
+    NomeExibicao: name
+  };
+  DB.unshift(newClient);
+  saveDB();
+  closeNewClientModal();
+  showToast(`Cliente "${newClient.Instituicao}" criado!`, 'success');
+  navigateTo('detail', newClient);
 }
 
 // ============================================
@@ -1109,7 +1130,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.1.0';
+let currentAppVersion = '2.1.1';
 
 async function checkAppVersion() {
   try {
