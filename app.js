@@ -635,6 +635,7 @@ function renderMachineList() {
     const status = cloud.status_protecao || 'DESCONHECIDO';
     const isFrozen = status === 'CONGELADO';
     const isPending = status === 'PENDENTE';
+    const isUnavailable = status === 'INDISPONIVEL';
 
     let badgeClass = 'status-thawed';
     let statusIcon = 'icon-flame';
@@ -647,6 +648,10 @@ function renderMachineList() {
       badgeClass = 'status-pending';
       statusIcon = 'icon-hourglass';
       statusLabel = 'Pendente de Ativação';
+    } else if (isUnavailable) {
+      badgeClass = 'status-pending';
+      statusIcon = 'icon-alert-triangle';
+      statusLabel = 'Proteção Indisponível (edição do Windows)';
     }
 
     const card = document.createElement('div');
@@ -1276,7 +1281,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.5.0';
+let currentAppVersion = '2.5.1';
 
 async function checkAppVersion() {
   try {

@@ -106,6 +106,8 @@ function renderPortalMachines() {
     const isFrozen = status === 'CONGELADO';
     const isPending = status === 'PENDENTE';
 
+    const isUnavailable = status === 'INDISPONIVEL';
+
     let badgeClass = 'status-thawed';
     let statusIcon = 'icon-flame';
     let statusLabel = 'Descongelado';
@@ -117,6 +119,10 @@ function renderPortalMachines() {
       badgeClass = 'status-pending';
       statusIcon = 'icon-hourglass';
       statusLabel = 'Pendente de Ativação';
+    } else if (isUnavailable) {
+      badgeClass = 'status-pending';
+      statusIcon = 'icon-alert-triangle';
+      statusLabel = 'Proteção Indisponível';
     }
 
     const card = document.createElement('div');
