@@ -613,6 +613,11 @@ function renderMachines() {
 function renderMachineList() {
   const container = document.getElementById('machines-list');
   if (!container || !selectedClient) return;
+  // A sincronização automática (a cada 15s) chama esta função de novo -
+  // sem isto, o innerHTML = '' abaixo recria os checkboxes zerados e
+  // qualquer máquina marcada pelo admin "desmarcava sozinha" alguns
+  // segundos depois, no meio de uma ação.
+  const previouslySelected = new Set(getSelectedHwIds());
   container.innerHTML = '';
 
   const filterAmb = document.getElementById('filter-ambiente')?.value || '';
@@ -659,7 +664,7 @@ function renderMachineList() {
     card.innerHTML = `
       <div class="machine-card-header">
         <div class="machine-card-header-left">
-          <input type="checkbox" class="machine-checkbox" data-hwid="${escapeHtml(m.HardwareID)}" onchange="updateSelectCount()">
+          <input type="checkbox" class="machine-checkbox" data-hwid="${escapeHtml(m.HardwareID)}" onchange="updateSelectCount()" ${previouslySelected.has(m.HardwareID) ? 'checked' : ''}>
           <span class="machine-card-title">${escapeHtml(m.NomeExibicao || m.HardwareID)}</span>
         </div>
         <span class="machine-status-badge ${badgeClass}"><svg class="icon"><use href="#${statusIcon}"/></svg> ${statusLabel}</span>
