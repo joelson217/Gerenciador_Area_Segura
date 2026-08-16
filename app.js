@@ -437,11 +437,12 @@ function renderClientDetail() {
   if (pUserInput) pUserInput.value = selectedClient.PortalUser || '';
   if (pPassInput) pPassInput.value = selectedClient.PortalPass || '';
 
-  // Link fica numa página separada (portal.html), sem nenhum código do
-  // Gerenciador admin — assim ninguém "tira uma parte" do link do cliente
-  // e chega no meu painel; é uma URL diferente desde o início.
+  // Portal roda num projeto Cloudflare separado, com domínio próprio, sem
+  // nenhum código nem dado do Gerenciador admin junto — não tem "meu link"
+  // pra ninguém achar apagando parte da URL.
+  const PORTAL_BASE_URL = 'https://acesso-portal.joelson217.workers.dev';
   const portalKey = selectedClient.PortalUser || selectedClient.Id;
-  const portalUrl = `${window.location.origin}/portal.html?u=${encodeURIComponent(portalKey)}`;
+  const portalUrl = `${PORTAL_BASE_URL}/?u=${encodeURIComponent(portalKey)}`;
   if (pLinkInput) pLinkInput.value = portalUrl;
 
   if (pBadge) {
@@ -1195,7 +1196,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.3.0';
+let currentAppVersion = '2.4.0';
 
 async function checkAppVersion() {
   try {
