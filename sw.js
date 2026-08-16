@@ -57,9 +57,7 @@ self.addEventListener('fetch', event => {
     url.includes('version.json') ||
     url.includes('supabase.co') ||
     url.includes('api.ipify.org') ||
-    url.includes('ipinfo.io') ||
-    url.includes('portal.html') ||
-    url.includes('portal.js')
+    url.includes('ipinfo.io')
   ) {
     event.respondWith(
       fetch(event.request, { cache: 'no-store' }).catch(() => caches.match(event.request))
