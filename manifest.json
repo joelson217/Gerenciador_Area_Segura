@@ -1,13 +1,13 @@
 {
-  "name": "Gerenciador - Área Segura",
-  "short_name": "Gerenciador",
-  "description": "Painel de Controle e Gerenciador de Clientes e Licenças - Área Segura Pro",
+  "name": "Gerenciador - Área Segura Pro",
+  "short_name": "Área Segura",
+  "description": "Painel de Controle e Gestão de Licenças - Área Segura Enterprise",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#1A1A2E",
-  "theme_color": "#0F3460",
-  "version": "1.4.0",
+  "background_color": "#0B0F17",
+  "theme_color": "#0F172A",
+  "version": "2.0.0",
   "icons": [
     {
       "src": "icons/icon-192.png",

@@ -1,12 +1,13 @@
 // ============================================
-// ÁREA SEGURA - PWA Mobile App
-// Lógica Principal
+// ÁREA SEGURA PRO - PWA GERENCIADOR MOBILE & DESKTOP
+// Versão: 2.0.0 Pro Enterprise
 // ============================================
 
 // --- Configuração Supabase ---
 const SUPABASE_URL = 'https://inndgkbugwegrkbvogew.supabase.co/rest/v1';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubmRna2J1Z3dlZ3JrYnZvZ2V3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDQ2ODgsImV4cCI6MjA5NDYyMDY4OH0.8_ZW6I_XbG5UGMEMOKKoY51OA7P97FNdCiBqHs5e00E';
 const HMAC_SECRET = 'AreaSegura@Joelson!2026';
+const PIN_SALT = '@AreaSegura_Salt_2026!';
 
 const supaHeaders = {
   'apikey': SUPABASE_KEY,
@@ -20,9 +21,15 @@ let selectedClient = null;
 let cloudStatuses = {};
 let currentPage = 'dashboard';
 let isClientPortal = false;
+let clientPortalTarget = null;
+
+// Controle de Força Bruta no PIN
+let failedPinAttempts = 0;
+let pinLockoutUntil = 0;
+let pinLockoutTimer = null;
 
 // ============================================
-// HMAC-SHA256 para Gerar Chaves de Ativação
+// HMAC-SHA256 Criptográfico (Geração de Chaves)
 // ============================================
 async function hmacSHA256(key, message) {
   const enc = new TextEncoder();
@@ -44,7 +51,7 @@ async function getActivationKey(hardwareId, expirationDate) {
 }
 
 // ============================================
-// API Supabase
+// API Supabase Cloud
 // ============================================
 async function fetchCloudStatuses() {
   try {
@@ -85,7 +92,7 @@ async function sendSupabaseCommand(hwId, cmd) {
 }
 
 // ============================================
-// Banco de Dados Local (LocalStorage)
+// Banco de Dados Local & Nuvem
 // ============================================
 function loadDB() {
   const saved = localStorage.getItem('area_segura_db');
@@ -96,12 +103,13 @@ function loadDB() {
     DB = [
       {
         "Id": "83089473-cad9-48aa-af20-c06fa6b0b693",
-        "Instituicao": "Casa",
-        "Responsavel": "Joelson",
-        "Contato": "81-992781275",
+        "Instituicao": "Laboratório Modelo",
+        "Responsavel": "Administrador",
+        "Localidade": "Sede Principal",
+        "Contato": "(81) 99999-9999",
         "Ambientes": ["Lab Principal"],
         "Maquinas": [],
-        "NomeExibicao": "Casa",
+        "NomeExibicao": "Laboratório Modelo",
         "CorAlerta": "White"
       }
     ];
@@ -110,6 +118,10 @@ function loadDB() {
 }
 
 async function saveDB() {
+  if (isClientPortal) {
+    // Modo portal do cliente: salva apenas no estado local sem sobrescrever backup master
+    return;
+  }
   localStorage.setItem('area_segura_db', JSON.stringify(DB));
   
   // Sincronizar banco de dados para a nuvem
@@ -130,7 +142,6 @@ async function saveDB() {
   } catch (e) { console.error('Erro ao salvar backup na nuvem:', e); }
 }
 
-// --- Sincronizar DB com Supabase (carregar licenças da nuvem) ---
 async function syncFromCloud() {
   try {
     const res = await fetch(
@@ -140,23 +151,22 @@ async function syncFromCloud() {
     if (!res.ok) return;
     const cloudData = await res.json();
 
-    // Sincronizar o banco de dados dos clientes da nuvem se houver
-    const backupRow = cloudData.find(r => r.hardware_id === 'DB_BACKUP');
-    if (backupRow && backupRow.chave_ativacao) {
-      try {
-        const cloudDB = JSON.parse(backupRow.chave_ativacao);
-        if (Array.isArray(cloudDB) && cloudDB.length > 0) {
-          // Atualiza o local se estiver vazio ou se o da nuvem for mais recente/diferente
-          if (DB.length === 0 || JSON.stringify(DB) !== JSON.stringify(cloudDB)) {
-            DB = cloudDB;
-            localStorage.setItem('area_segura_db', JSON.stringify(DB));
-            
-            // Re-renderiza a tela atual para refletir os novos dados
-            if (currentPage === 'dashboard') renderDashboard();
-            else if (currentPage === 'clients') renderClientList();
+    // Sincronização de backup apenas para administradores (não em modo portal isolado)
+    if (!isClientPortal) {
+      const backupRow = cloudData.find(r => r.hardware_id === 'DB_BACKUP');
+      if (backupRow && backupRow.chave_ativacao) {
+        try {
+          const cloudDB = JSON.parse(backupRow.chave_ativacao);
+          if (Array.isArray(cloudDB) && cloudDB.length > 0) {
+            if (DB.length === 0 || JSON.stringify(DB) !== JSON.stringify(cloudDB)) {
+              DB = cloudDB;
+              localStorage.setItem('area_segura_db', JSON.stringify(DB));
+              if (currentPage === 'dashboard') renderDashboard();
+              else if (currentPage === 'clients') renderClientList();
+            }
           }
-        }
-      } catch (err) { console.error('Erro ao carregar banco da nuvem:', err); }
+        } catch (err) { console.error('Erro ao processar backup:', err); }
+      }
     }
 
     // Carregar status reais das máquinas
@@ -166,24 +176,25 @@ async function syncFromCloud() {
       if (r.hardware_id !== 'DB_BACKUP') {
         cloudStatuses[r.hardware_id] = r;
         
-        // Se a máquina estiver no Supabase mas não constar em nenhum cliente local, vincula automaticamente ao primeiro cliente
-        const found = DB.some(c => c.Maquinas && c.Maquinas.some(m => m.HardwareID === r.hardware_id));
-        if (!found && DB.length > 0) {
-          if (!DB[0].Maquinas) DB[0].Maquinas = [];
-          DB[0].Maquinas.push({
-            Id: generateId(),
-            Laboratorio: 'Lab Principal',
-            HardwareID: r.hardware_id,
-            DataExpiracao: r.data_expiracao || '2027-08-15',
-            ChaveGerada: r.chave_ativacao || '',
-            NomeExibicao: r.hardware_id
-          });
-          dbUpdated = true;
+        if (!isClientPortal && DB.length > 0) {
+          const found = DB.some(c => c.Maquinas && c.Maquinas.some(m => m.HardwareID === r.hardware_id));
+          if (!found) {
+            if (!DB[0].Maquinas) DB[0].Maquinas = [];
+            DB[0].Maquinas.push({
+              Id: generateId(),
+              Laboratorio: 'Lab Principal',
+              HardwareID: r.hardware_id,
+              DataExpiracao: r.data_expiracao || '2027-08-15',
+              ChaveGerada: r.chave_ativacao || '',
+              NomeExibicao: r.hardware_id
+            });
+            dbUpdated = true;
+          }
         }
       }
     });
 
-    if (dbUpdated) {
+    if (dbUpdated && !isClientPortal) {
       localStorage.setItem('area_segura_db', JSON.stringify(DB));
     }
 
@@ -193,7 +204,7 @@ async function syncFromCloud() {
 }
 
 // ============================================
-// Navegação entre Páginas
+// Navegação
 // ============================================
 function navigateTo(page, data) {
   currentPage = page;
@@ -249,525 +260,301 @@ function goBack() {
 function getDashboardStats() {
   let totalClients = DB.length;
   let totalMachines = 0;
-  let expiring = 0;
-  let ok = 0;
+  let expiringMachines = 0;
+  let okMachines = 0;
+
+  const now = new Date();
+  const thirtyDaysAhead = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   DB.forEach(c => {
     if (c.Maquinas && Array.isArray(c.Maquinas)) {
+      totalMachines += c.Maquinas.length;
       c.Maquinas.forEach(m => {
-        totalMachines++;
-        const days = getDaysRemaining(m.DataExpiracao);
-        if (days <= 30) expiring++;
-        else ok++;
+        if (m.DataExpiracao) {
+          const exp = new Date(m.DataExpiracao);
+          if (exp <= thirtyDaysAhead) {
+            expiringMachines++;
+          } else {
+            okMachines++;
+          }
+        }
       });
     }
   });
 
-  return { totalClients, totalMachines, expiring, ok };
-}
-
-function getDaysRemaining(dateStr) {
-  const exp = new Date(dateStr + 'T23:59:59');
-  const now = new Date();
-  return Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+  return { totalClients, totalMachines, expiringMachines, okMachines };
 }
 
 function renderDashboard() {
   const stats = getDashboardStats();
-
   document.getElementById('stat-clients').textContent = stats.totalClients;
   document.getElementById('stat-machines').textContent = stats.totalMachines;
-  document.getElementById('stat-expiring').textContent = stats.expiring;
-  document.getElementById('stat-ok').textContent = stats.ok;
+  document.getElementById('stat-expiring').textContent = stats.expiringMachines;
+  document.getElementById('stat-ok').textContent = stats.okMachines;
 
-  const expiringCard = document.querySelector('.card-expiring');
-  if (stats.expiring > 0) expiringCard.classList.add('has-alert');
-  else expiringCard.classList.remove('has-alert');
-
-  // Banner de Máquinas Detectadas na Nuvem
   renderPendingMachinesBanner();
 
-  // Clientes recentes no dashboard
-  renderRecentClients();
-}
+  const recentList = document.getElementById('recent-clients');
+  if (!recentList) return;
+  recentList.innerHTML = '';
 
-function renderPendingMachinesBanner() {
-  const container = document.getElementById('pending-machines-banner');
-  if (!container) return;
-
-  const existingHwIds = new Set();
-  DB.forEach(c => {
-    if (c.Maquinas) c.Maquinas.forEach(m => existingHwIds.add(m.HardwareID));
-  });
-
-  const pendingList = Object.values(cloudStatuses).filter(s => 
-    s.hardware_id && 
-    s.hardware_id !== 'DB_BACKUP' && 
-    !existingHwIds.has(s.hardware_id) && 
-    (s.chave_ativacao && s.chave_ativacao.startsWith('PENDENTE'))
-  );
-
-  if (pendingList.length === 0) {
-    container.innerHTML = '';
-    container.style.display = 'none';
+  const recent = DB.slice(0, 5);
+  if (recent.length === 0) {
+    recentList.innerHTML = '<div class="empty-state"><div class="empty-state-text">Nenhum cliente cadastrado ainda.</div></div>';
     return;
   }
 
-  let html = '';
-  pendingList.forEach(p => {
-    const meta = parsePendingMeta(p.chave_ativacao);
-    const displayName = meta.host !== 'Desconhecido' ? meta.host : p.hardware_id;
-    html += `
-      <div class="pending-alert-card">
-        <div class="pending-alert-header">
-          <span class="pulse-dot"></span>
-          <span class="pending-alert-title">⚡ Nova Máquina Conectada na Nuvem!</span>
-        </div>
-        <div class="pending-alert-body">
-          <div class="pending-machine-name">💻 ${escapeHtml(displayName)}</div>
-          <div class="pending-machine-meta">ID: <b>${escapeHtml(p.hardware_id)}</b> • IP: ${escapeHtml(meta.ip)}</div>
-        </div>
-        <button class="btn-activate-quick" onclick="quickActivateModal('${escapeHtml(p.hardware_id)}', '${escapeHtml(meta.host)}')">
-          ⚡ ATIVAR MÁQUINA (1 Toque)
-        </button>
+  recent.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'client-card';
+    const totalMaq = c.Maquinas ? c.Maquinas.length : 0;
+    card.innerHTML = `
+      <div class="client-card-header">
+        <span class="client-card-name">${escapeHtml(c.Instituicao || 'Sem Nome')}</span>
+        <span class="client-card-tag">${totalMaq} máquina(s)</span>
+      </div>
+      <div class="client-card-meta">
+        <span>📍 ${escapeHtml(c.Localidade || 'Não informada')}</span>
+        <span>👤 ${escapeHtml(c.Responsavel || 'Não informado')}</span>
       </div>
     `;
+    card.onclick = () => navigateTo('detail', c);
+    recentList.appendChild(card);
   });
-
-  container.innerHTML = html;
-  container.style.display = 'block';
 }
 
-function renderRecentClients() {
-  const container = document.getElementById('recent-clients');
-  if (!container) return;
+// Banner de Novas Máquinas Detectadas
+function renderPendingMachinesBanner() {
+  const banner = document.getElementById('pending-machines-banner');
+  if (!banner) return;
+  
+  const pendingHwIds = Object.keys(cloudStatuses).filter(hwId => {
+    const st = cloudStatuses[hwId];
+    return st && st.status_protecao === 'PENDENTE';
+  });
 
-  if (DB.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">📋</div>
-        <div class="empty-state-text">Nenhum cliente cadastrado ainda</div>
-      </div>`;
+  if (pendingHwIds.length === 0) {
+    banner.innerHTML = '';
     return;
   }
 
-  let html = '';
-  const recent = DB.slice(-5).reverse();
-  recent.forEach(c => {
-    const maqCount = (c.Maquinas || []).length;
-    const expCount = (c.Maquinas || []).filter(m => getDaysRemaining(m.DataExpiracao) <= 30).length;
-    const initial = (c.Instituicao || 'C')[0].toUpperCase();
-
-    html += `
-      <div class="client-card" onclick="navigateTo('detail', DB.find(x => x.Id === '${c.Id}'))">
-        <div class="client-card-avatar">${initial}</div>
-        <div class="client-card-info">
-          <div class="client-card-name">${escapeHtml(c.Instituicao || 'Sem Nome')}</div>
-          <div class="client-card-meta">${maqCount} máquina(s) • ${c.Contato || 'Sem contato'}</div>
-        </div>
-        ${expCount > 0 ? `<div class="client-card-badge">⏳ ${expCount}</div>` : `<div class="client-card-badge ok">✓</div>`}
-        <div class="client-card-arrow">›</div>
-      </div>`;
-  });
-
-  container.innerHTML = html;
+  banner.innerHTML = `
+    <div class="pending-alert-card" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+        <span style="font-weight:700; color:var(--accent-orange); font-size:13px;">⚠️ ${pendingHwIds.length} Novo(s) Computador(es) Detectado(s)</span>
+      </div>
+      <p style="font-size:12px; color:var(--text-secondary); margin-bottom:10px;">Há terminais recém-instalados aguardando ativação de licença na nuvem.</p>
+      <button class="btn-small-action" style="background:var(--accent-orange); color:#0F172A; font-weight:700; width:100%; padding:8px;" onclick="navigateTo('clients')">
+        Ver Clientes e Ativar Terminais
+      </button>
+    </div>
+  `;
 }
 
 // ============================================
 // Lista de Clientes
 // ============================================
-function renderClientList(filter = '') {
+function renderClientList(query = '') {
   const container = document.getElementById('client-list-container');
   if (!container) return;
+  container.innerHTML = '';
 
-  let filtered = DB;
-  if (filter.trim()) {
-    const f = filter.toLowerCase();
-    filtered = DB.filter(c =>
-      (c.Instituicao || '').toLowerCase().includes(f) ||
-      (c.Responsavel || '').toLowerCase().includes(f) ||
-      (c.Contato || '').toLowerCase().includes(f)
+  const q = query.toLowerCase().trim();
+  const filtered = DB.filter(c => {
+    if (!q) return true;
+    return (
+      (c.Instituicao && c.Instituicao.toLowerCase().includes(q)) ||
+      (c.Localidade && c.Localidade.toLowerCase().includes(q)) ||
+      (c.Responsavel && c.Responsavel.toLowerCase().includes(q)) ||
+      (c.Contato && c.Contato.toLowerCase().includes(q))
     );
-  }
+  });
 
   if (filtered.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🔍</div>
-        <div class="empty-state-text">${filter ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}</div>
-      </div>`;
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Nenhum cliente encontrado.</div></div>';
     return;
   }
 
-  let html = '';
   filtered.forEach(c => {
-    const maqCount = (c.Maquinas || []).length;
-    const expCount = (c.Maquinas || []).filter(m => getDaysRemaining(m.DataExpiracao) <= 30).length;
-    const initial = (c.Instituicao || 'C')[0].toUpperCase();
-
-    html += `
-      <div class="client-card" onclick="navigateTo('detail', DB.find(x => x.Id === '${c.Id}'))">
-        <div class="client-card-avatar">${initial}</div>
-        <div class="client-card-info">
-          <div class="client-card-name">${escapeHtml(c.Instituicao || 'Sem Nome')}</div>
-          <div class="client-card-meta">${maqCount} máquina(s) • ${c.Responsavel || 'Sem responsável'}</div>
-        </div>
-        ${expCount > 0 ? `<div class="client-card-badge">⏳ ${expCount}</div>` : maqCount > 0 ? `<div class="client-card-badge ok">✓</div>` : ''}
-        <div class="client-card-arrow">›</div>
-      </div>`;
+    const card = document.createElement('div');
+    card.className = 'client-card';
+    const totalMaq = c.Maquinas ? c.Maquinas.length : 0;
+    card.innerHTML = `
+      <div class="client-card-header">
+        <span class="client-card-name">${escapeHtml(c.Instituicao || 'Sem Nome')}</span>
+        <span class="client-card-tag">${totalMaq} máquina(s)</span>
+      </div>
+      <div class="client-card-meta">
+        <span>📍 ${escapeHtml(c.Localidade || 'Não informada')}</span>
+        <span>👤 ${escapeHtml(c.Responsavel || 'Não informado')}</span>
+        ${c.Contato ? `<span>📞 ${escapeHtml(c.Contato)}</span>` : ''}
+      </div>
+    `;
+    card.onclick = () => navigateTo('detail', c);
+    container.appendChild(card);
   });
-
-  container.innerHTML = html;
 }
 
 // ============================================
-// Detalhes do Cliente, Accordion & Portal
+// Detalhes do Cliente & Portal Exclusivo
 // ============================================
-function toggleClientAccordion() {
-  const content = document.getElementById('client-accordion-content');
-  const btn = document.getElementById('client-accordion-btn');
-  if (!content) return;
-  
-  const isHidden = content.style.display === 'none' || !content.style.display;
-  content.style.display = isHidden ? 'block' : 'none';
-  if (btn) btn.classList.toggle('active', isHidden);
-}
-
 function renderClientDetail() {
   if (!selectedClient) return;
 
-  // Preencher campos de dados
-  document.getElementById('detail-instituicao').value = selectedClient.Instituicao || '';
-  document.getElementById('detail-localidade').value = selectedClient.Localidade || '';
-  document.getElementById('detail-responsavel').value = selectedClient.Responsavel || '';
-  document.getElementById('detail-contato').value = selectedClient.Contato || '';
+  const instInput = document.getElementById('detail-instituicao');
+  const locInput = document.getElementById('detail-localidade');
+  const respInput = document.getElementById('detail-responsavel');
+  const contInput = document.getElementById('detail-contato');
 
-  // Credenciais do Portal do Cliente
-  document.getElementById('detail-portal-user').value = selectedClient.PortalUser || '';
-  document.getElementById('detail-portal-pass').value = selectedClient.PortalPass || '';
+  if (instInput) instInput.value = selectedClient.Instituicao || '';
+  if (locInput) locInput.value = selectedClient.Localidade || '';
+  if (respInput) respInput.value = selectedClient.Responsavel || '';
+  if (contInput) contInput.value = selectedClient.Contato || '';
 
-  // Gerar Link do Portal
+  // Portal do Cliente
+  const pUserInput = document.getElementById('detail-portal-user');
+  const pPassInput = document.getElementById('detail-portal-pass');
+  const pLinkInput = document.getElementById('detail-portal-link');
+  const pBadge = document.getElementById('portal-status-badge');
+
+  if (pUserInput) pUserInput.value = selectedClient.PortalUser || '';
+  if (pPassInput) pPassInput.value = selectedClient.PortalPass || '';
+
+  const portalKey = selectedClient.PortalUser || selectedClient.Id;
   const baseUrl = window.location.origin + window.location.pathname;
-  const portalUrl = `${baseUrl}?portal=${encodeURIComponent(selectedClient.Id)}`;
-  const linkInput = document.getElementById('detail-portal-link');
-  if (linkInput) linkInput.value = portalUrl;
+  const portalUrl = `${baseUrl}?portal=${encodeURIComponent(portalKey)}`;
+  if (pLinkInput) pLinkInput.value = portalUrl;
 
-  // Badge de Portal Ativo
-  const portalBadge = document.getElementById('portal-status-badge');
-  if (portalBadge) {
-    portalBadge.style.display = (selectedClient.PortalUser || selectedClient.PortalPass) ? 'inline-flex' : 'none';
+  if (pBadge) {
+    pBadge.style.display = selectedClient.PortalUser ? 'inline-block' : 'none';
   }
 
-  // Contagem de máquinas
-  const maqCount = (selectedClient.Maquinas || []).length;
-  document.getElementById('detail-maq-count').textContent = `${maqCount} máquina(s) cadastrada(s)`;
+  // Ambientes / Laboratórios
+  renderAmbientes();
 
-  // Renderizar lista de Ambientes / Laboratórios
-  renderAmbientesList();
+  // Contador de máquinas
+  const maqCountEl = document.getElementById('detail-maq-count');
+  const total = selectedClient.Maquinas ? selectedClient.Maquinas.length : 0;
+  if (maqCountEl) maqCountEl.textContent = `${total} máquina(s) cadastrada(s)`;
 }
 
-function getClientAmbientes(client) {
-  if (!client) return [{ Nome: 'Lab Principal', Capacidade: 20 }];
-  let ambs = [];
+function toggleClientAccordion() {
+  const content = document.getElementById('client-accordion-content');
+  const chevron = document.getElementById('client-accordion-chevron');
+  if (!content) return;
   
-  if (Array.isArray(client.Ambientes)) {
-    client.Ambientes.forEach(a => {
-      if (typeof a === 'string') {
-        ambs.push({ Nome: a, Capacidade: 20 });
-      } else if (a && a.Nome) {
-        ambs.push({ Nome: a.Nome, Capacidade: parseInt(a.Capacidade) || 20 });
-      }
-    });
-  }
-
-  // Descobrir ambientes extras presentes nas máquinas
-  if (Array.isArray(client.Maquinas)) {
-    client.Maquinas.forEach(m => {
-      if (m.Laboratorio && !ambs.some(a => a.Nome === m.Laboratorio)) {
-        ambs.push({ Nome: m.Laboratorio, Capacidade: 20 });
-      }
-    });
-  }
-
-  if (ambs.length === 0) ambs = [{ Nome: 'Lab Principal', Capacidade: 20 }];
-  return ambs;
-}
-
-function renderAmbientesList() {
-  const container = document.getElementById('detail-ambientes-container');
-  if (!container || !selectedClient) return;
-
-  const ambs = getClientAmbientes(selectedClient);
-  const machines = selectedClient.Maquinas || [];
-
-  if (ambs.length === 0) {
-    container.innerHTML = `<div style="color:var(--text-muted); font-size:12px;">Nenhum laboratório cadastrado.</div>`;
-    return;
-  }
-
-  let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
-  ambs.forEach((amb, idx) => {
-    const maqInLab = machines.filter(m => m.Laboratorio === amb.Nome).length;
-    html += `
-      <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-        <div>
-          <span style="font-weight:700; color:white; font-size:14px;">🖥️ ${escapeHtml(amb.Nome)}</span>
-          <span class="lab-capacity-tag">${maqInLab} / ${amb.Capacidade} Máquinas</span>
-        </div>
-        <div style="display:flex; gap:6px;">
-          <button class="btn-secondary" style="padding:4px 8px; font-size:11px;" onclick="editAmbienteModal(${idx})">✏️ Editar</button>
-          ${ambs.length > 1 ? `<button class="btn-secondary" style="padding:4px 8px; font-size:11px; color:#E94560;" onclick="deleteAmbiente(${idx})">🗑️</button>` : ''}
-        </div>
-      </div>`;
-  });
-  html += '</div>';
-
-  container.innerHTML = html;
-}
-
-function showAddAmbienteModal() {
-  showModal(`
-    <div class="modal-title">➕ Novo Laboratório / Ambiente</div>
-    <div class="detail-field">
-      <div class="detail-label">Nome do Laboratório / Ambiente</div>
-      <input type="text" class="detail-input" id="modal-amb-nome" placeholder="Ex: Laboratório 01">
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Quantidade de Máquinas Previstas</div>
-      <input type="number" class="detail-input" id="modal-amb-capacidade" value="20" min="1" max="500">
-    </div>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-confirm" onclick="saveNewAmbiente()">Adicionar</button>
-    </div>
-  `);
-}
-
-function saveNewAmbiente() {
-  if (!selectedClient) return;
-  const nome = document.getElementById('modal-amb-nome').value.trim();
-  const cap = parseInt(document.getElementById('modal-amb-capacidade').value) || 20;
-
-  if (!nome) { showToast('Digite o nome do laboratório', 'error'); return; }
-
-  let ambs = getClientAmbientes(selectedClient);
-  if (ambs.some(a => a.Nome.toLowerCase() === nome.toLowerCase())) {
-    showToast('Já existe um laboratório com esse nome', 'warning');
-    return;
-  }
-
-  ambs.push({ Nome: nome, Capacidade: cap });
-  selectedClient.Ambientes = ambs;
-  saveDB();
-  closeModal();
-  renderAmbientesList();
-  showToast(`Laboratório "${nome}" adicionado com sucesso!`, 'success');
-}
-
-function editAmbienteModal(idx) {
-  if (!selectedClient) return;
-  const ambs = getClientAmbientes(selectedClient);
-  const amb = ambs[idx];
-  if (!amb) return;
-
-  showModal(`
-    <div class="modal-title">✏️ Editar Laboratório</div>
-    <div class="detail-field">
-      <div class="detail-label">Nome do Laboratório</div>
-      <input type="text" class="detail-input" id="modal-edit-amb-nome" value="${escapeHtml(amb.Nome)}">
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Quantidade de Máquinas Previstas</div>
-      <input type="number" class="detail-input" id="modal-edit-amb-capacidade" value="${amb.Capacidade || 20}" min="1" max="500">
-    </div>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-confirm" onclick="saveEditAmbiente(${idx})">Salvar</button>
-    </div>
-  `);
-}
-
-function saveEditAmbiente(idx) {
-  if (!selectedClient) return;
-  const ambs = getClientAmbientes(selectedClient);
-  const oldAmb = ambs[idx];
-  if (!oldAmb) return;
-
-  const newNome = document.getElementById('modal-edit-amb-nome').value.trim();
-  const newCap = parseInt(document.getElementById('modal-edit-amb-capacidade').value) || 20;
-
-  if (!newNome) { showToast('Nome não pode ser vazio', 'error'); return; }
-
-  // Se alterou o nome, atualiza também as máquinas que estavam nesse laboratório
-  if (oldAmb.Nome !== newNome && Array.isArray(selectedClient.Maquinas)) {
-    selectedClient.Maquinas.forEach(m => {
-      if (m.Laboratorio === oldAmb.Nome) {
-        m.Laboratorio = newNome;
-      }
-    });
-  }
-
-  ambs[idx] = { Nome: newNome, Capacidade: newCap };
-  selectedClient.Ambientes = ambs;
-  saveDB();
-  closeModal();
-  renderAmbientesList();
-  showToast('Laboratório atualizado com sucesso!', 'success');
-}
-
-function deleteAmbiente(idx) {
-  if (!selectedClient) return;
-  const ambs = getClientAmbientes(selectedClient);
-  const amb = ambs[idx];
-  if (!amb) return;
-
-  if (confirm(`Deseja remover o laboratório "${amb.Nome}"? As máquinas vinculadas serão movidas para o primeiro laboratório.`)) {
-    ambs.splice(idx, 1);
-    const defaultLab = ambs[0]?.Nome || 'Lab Principal';
-
-    if (Array.isArray(selectedClient.Maquinas)) {
-      selectedClient.Maquinas.forEach(m => {
-        if (m.Laboratorio === amb.Nome) m.Laboratorio = defaultLab;
-      });
-    }
-
-    selectedClient.Ambientes = ambs;
-    saveDB();
-    renderAmbientesList();
-    showToast('Laboratório removido!', 'success');
+  if (content.style.display === 'none') {
+    content.style.display = 'block';
+    if (chevron) chevron.textContent = '▲';
+  } else {
+    content.style.display = 'none';
+    if (chevron) chevron.textContent = '▼';
   }
 }
 
 function saveClientDetails() {
   if (!selectedClient) return;
 
-  const inst = document.getElementById('detail-instituicao').value.trim();
-  if (!inst) { showToast('Nome da instituição não pode ser vazio', 'error'); return; }
+  selectedClient.Instituicao = document.getElementById('detail-instituicao')?.value.trim() || selectedClient.Instituicao;
+  selectedClient.Localidade = document.getElementById('detail-localidade')?.value.trim() || '';
+  selectedClient.Responsavel = document.getElementById('detail-responsavel')?.value.trim() || '';
+  selectedClient.Contato = document.getElementById('detail-contato')?.value.trim() || '';
+  
+  const pUser = document.getElementById('detail-portal-user')?.value.trim().toLowerCase().replace(/\s+/g, '_') || '';
+  const pPass = document.getElementById('detail-portal-pass')?.value.trim() || '';
 
-  selectedClient.Instituicao = inst;
-  selectedClient.Localidade = document.getElementById('detail-localidade').value.trim();
-  selectedClient.Responsavel = document.getElementById('detail-responsavel').value.trim();
-  selectedClient.Contato = document.getElementById('detail-contato').value.trim();
-  selectedClient.NomeExibicao = inst;
-
-  // Salvar credenciais do portal do cliente
-  selectedClient.PortalUser = document.getElementById('detail-portal-user').value.trim();
-  selectedClient.PortalPass = document.getElementById('detail-portal-pass').value.trim();
-
-  // Preservar os ambientes estruturados
-  if (!selectedClient.Ambientes || selectedClient.Ambientes.length === 0) {
-    selectedClient.Ambientes = [{ Nome: 'Lab Principal', Capacidade: 20 }];
-  }
+  selectedClient.PortalUser = pUser;
+  selectedClient.PortalPass = pPass;
 
   saveDB();
+  showToast('Dados do cliente atualizados com sucesso!', 'success');
   renderClientDetail();
-  showToast('Dados e credenciais do cliente salvos!', 'success');
 }
 
 function copyClientPortalLink() {
   const linkInput = document.getElementById('detail-portal-link');
-  if (!linkInput || !linkInput.value) return;
-
-  copyToClipboard(linkInput.value);
-  showToast('Link do portal copiado!', 'success');
+  if (linkInput && linkInput.value) {
+    navigator.clipboard.writeText(linkInput.value).then(() => {
+      showToast('Link do portal copiado!', 'success');
+    }).catch(() => {
+      linkInput.select();
+      document.execCommand('copy');
+      showToast('Link copiado!', 'success');
+    });
+  }
 }
 
 function shareClientPortalWhatsApp() {
   if (!selectedClient) return;
-  const inst = selectedClient.Instituicao || 'Cliente';
   const link = document.getElementById('detail-portal-link')?.value || '';
-  const user = selectedClient.PortalUser || 'Seu Usuário';
-  const pass = selectedClient.PortalPass || 'Sua Senha';
+  const pass = selectedClient.PortalPass || 'Sem senha definida';
+  const user = selectedClient.PortalUser || selectedClient.Id;
 
-  const msg = `Olá! Segue o link de acesso ao seu painel de controle do Área Segura:\n\n🏢 *${inst}*\n🔗 *Link:* ${link}\n👤 *Usuário:* ${user}\n🔑 *Senha:* ${pass}\n\nVocê pode abrir no navegador ou instalar como app no seu celular para congelar e descongelar seus computadores quando quiser.`;
-  
-  const encoded = encodeURIComponent(msg);
-  window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
+  const msg = `🔐 *ÁREA SEGURA PRO - ACESSO AO PORTAL*\n\nOlá! Segue seu link de acesso exclusivo para gerenciamento das máquinas do laboratório *${selectedClient.Instituicao}*:\n\n🔗 *Link Direto:* ${link}\n👤 *Usuário:* ${user}\n🔑 *Senha:* ${pass}\n\nGuarde estas credenciais com segurança.`;
+  const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
 }
 
-// --- Excluir Cliente ---
-function showDeleteClientModal() {
-  if (!selectedClient) return;
-  const nome = selectedClient.Instituicao || selectedClient.NomeExibicao || 'Este cliente';
-  const maqCount = (selectedClient.Maquinas || []).length;
+// Ambientes / Laboratórios
+function renderAmbientes() {
+  const container = document.getElementById('detail-ambientes-container');
+  if (!container || !selectedClient) return;
+  container.innerHTML = '';
 
-  showModal(`
-    <div class="modal-title" style="color:#E94560;">Excluir Cliente</div>
-    <div style="color:#ccc;margin-bottom:12px;">
-      Tem certeza que deseja excluir <strong style="color:white;">${escapeHtml(nome)}</strong>?
-      ${maqCount > 0 ? `<br><br><span style="color:#F39C12;">Atenao: ${maqCount} maquina(s) cadastrada(s) serao removidas.</span>` : ''}
-    </div>
-    <div class="detail-field">
-      <div class="detail-label" style="color:#E94560;">Digite o nome da instituicao para confirmar:</div>
-      <input type="text" class="detail-input" id="modal-confirm-delete" placeholder="${escapeHtml(nome)}" autocomplete="off">
-    </div>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-confirm" style="background:#E94560;" onclick="confirmDeleteClient()">EXCLUIR</button>
-    </div>
-  `);
+  const ambientes = selectedClient.Ambientes || ['Lab Principal'];
+  const grid = document.createElement('div');
+  grid.style.display = 'flex';
+  grid.style.flexWrap = 'wrap';
+  grid.style.gap = '8px';
+
+  ambientes.forEach(amb => {
+    const count = (selectedClient.Maquinas || []).filter(m => m.Laboratorio === amb).length;
+    const tag = document.createElement('div');
+    tag.className = 'client-card-tag';
+    tag.style.padding = '6px 12px';
+    tag.style.display = 'flex';
+    tag.style.alignItems = 'center';
+    tag.style.gap = '6px';
+    tag.innerHTML = `
+      <span>🏢 ${escapeHtml(amb)}</span>
+      <strong style="color:var(--accent-blue);">(${count} PCs)</strong>
+    `;
+    grid.appendChild(tag);
+  });
+
+  container.appendChild(grid);
 }
 
-async function confirmDeleteClient() {
-  if (!selectedClient) return;
-  const nome = selectedClient.Instituicao || selectedClient.NomeExibicao || '';
-  const typed = document.getElementById('modal-confirm-delete').value.trim();
-
-  if (typed.toLowerCase() !== nome.toLowerCase()) {
-    showToast('O nome digitado nao confere. Exclusao cancelada.', 'error');
-    return;
+function showAddAmbienteModal() {
+  const name = prompt('Digite o nome do novo Ambiente / Laboratório (ex: Lab 02, Biblioteca, Sala 10):');
+  if (name && name.trim()) {
+    if (!selectedClient.Ambientes) selectedClient.Ambientes = ['Lab Principal'];
+    const clean = name.trim();
+    if (!selectedClient.Ambientes.includes(clean)) {
+      selectedClient.Ambientes.push(clean);
+      saveDB();
+      renderAmbientes();
+      showToast(`Ambiente "${clean}" adicionado!`, 'success');
+    }
   }
-
-  // Remove cloud licenses for all machines of this client
-  const machines = selectedClient.Maquinas || [];
-  for (const m of machines) {
-    try {
-      await fetch(`${SUPABASE_URL}/licencas?hardware_id=eq.${m.HardwareID}`, {
-        method: 'DELETE',
-        headers: supaHeaders
-      });
-    } catch (e) { /* offline, will remain in cloud */ }
-  }
-
-  // Remove client from local DB
-  const idx = DB.findIndex(c => c.Id === selectedClient.Id);
-  if (idx >= 0) DB.splice(idx, 1);
-
-  saveDB();
-  closeModal();
-  selectedClient = null;
-  navigateTo('dashboard');
-  showToast(`Cliente "${nome}" excluido com sucesso!`, 'success');
 }
 
 // ============================================
-// Máquinas
+// Gerenciamento de Máquinas
 // ============================================
-async function renderMachines() {
+function renderMachines() {
   if (!selectedClient) return;
 
-  await fetchCloudStatuses();
-
-  const container = document.getElementById('machines-list');
-  const machines = selectedClient.Maquinas || [];
-
-  // Filtro de Ambientes
-  const filterAmb = document.getElementById('filter-ambiente');
-  if (filterAmb) {
-    const ambs = getClientAmbientes(selectedClient);
-    filterAmb.innerHTML = '<option value="">Todos os Ambientes</option>';
-    ambs.forEach(a => {
-      const nome = typeof a === 'object' ? a.Nome : a;
-      filterAmb.innerHTML += `<option value="${escapeHtml(nome)}">${escapeHtml(nome)}</option>`;
-    });
-  }
-
-  // Ajustar barra de ações para o Portal do Cliente
-  const actionBar = document.querySelector('.action-bar');
-  if (actionBar) {
-    const adminButtons = actionBar.querySelectorAll('.renew, .revoke, .update, .uninstall, .delete-maq, .add');
-    adminButtons.forEach(btn => {
-      btn.style.display = isClientPortal ? 'none' : '';
+  // Atualizar filtro de ambientes
+  const filterSelect = document.getElementById('filter-ambiente');
+  if (filterSelect) {
+    filterSelect.innerHTML = '<option value="">Todos os Ambientes</option>';
+    const ambientes = selectedClient.Ambientes || ['Lab Principal'];
+    ambientes.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a;
+      opt.textContent = a;
+      filterSelect.appendChild(opt);
     });
   }
 
@@ -776,833 +563,271 @@ async function renderMachines() {
 
 function renderMachineList() {
   const container = document.getElementById('machines-list');
-  const machines = selectedClient.Maquinas || [];
-  const filterVal = document.getElementById('filter-ambiente')?.value || '';
-  const searchVal = document.getElementById('search-machine')?.value?.trim().toLowerCase() || '';
+  if (!container || !selectedClient) return;
+  container.innerHTML = '';
 
-  let filtered = machines;
+  const filterAmb = document.getElementById('filter-ambiente')?.value || '';
+  const searchQ = (document.getElementById('search-machine')?.value || '').toLowerCase().trim();
 
-  if (filterVal) {
-    filtered = filtered.filter(m => m.Laboratorio === filterVal);
-  }
+  const machines = (selectedClient.Maquinas || []).filter(m => {
+    if (filterAmb && m.Laboratorio !== filterAmb) return false;
+    if (searchQ && !m.HardwareID.toLowerCase().includes(searchQ) && !(m.NomeExibicao || '').toLowerCase().includes(searchQ)) return false;
+    return true;
+  });
 
-  if (searchVal) {
-    filtered = filtered.filter(m =>
-      (m.HardwareID || '').toLowerCase().includes(searchVal) ||
-      (m.Laboratorio || '').toLowerCase().includes(searchVal) ||
-      (m.ChaveGerada || '').toLowerCase().includes(searchVal)
-    );
-  }
-
-  if (filtered.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🖥️</div>
-        <div class="empty-state-text">Nenhuma máquina encontrada</div>
-      </div>`;
+  if (machines.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Nenhuma máquina encontrada neste ambiente.</div></div>';
     updateSelectCount();
     return;
   }
 
-  let html = '';
-  filtered.forEach((m, i) => {
-    const days = getDaysRemaining(m.DataExpiracao);
-    const expDate = formatDate(m.DataExpiracao);
-    const cloud = cloudStatuses[m.HardwareID];
+  machines.forEach(m => {
+    const cloud = cloudStatuses[m.HardwareID] || {};
+    const status = cloud.status_protecao || 'DESCONHECIDO';
+    const isFrozen = status === 'CONGELADO';
+    const isPending = status === 'PENDENTE';
 
-    let statusClass = 'status-frozen';
-    let statusText = '🧊 CONGELADA';
-    let statusBadgeClass = 'frozen';
-    let daysClass = 'days-ok';
-    let daysText = `${days} dias`;
-
-    if (m.ChaveGerada === 'REVOGADA' || days <= 0) {
-      statusClass = 'status-danger';
-      daysClass = 'days-danger';
-      daysText = m.ChaveGerada === 'REVOGADA' ? 'REVOGADA' : 'EXPIRADA';
-      statusBadgeClass = 'danger';
-    } else if (days <= 30) {
-      statusClass = 'status-warning';
-      daysClass = 'days-warn';
-      daysText = `${days} dias ⚠️`;
-      statusBadgeClass = 'warning';
+    let badgeClass = 'status-thawed';
+    let statusLabel = '🔥 Descongelado';
+    if (isFrozen) {
+      badgeClass = 'status-frozen';
+      statusLabel = '🧊 Protegido (Congelado)';
+    } else if (isPending) {
+      badgeClass = 'status-pending';
+      statusLabel = '⏳ Pendente de Ativação';
     }
 
-    if (cloud) {
-      if (cloud.status_protecao === 'DESCONGELADO') {
-        statusText = '🔥 DESBLOQUEADA';
-        statusBadgeClass = 'thawed';
-        statusClass = 'status-thawed';
-      } else {
-        statusText = '🧊 CONGELADA';
-      }
-      if (cloud.chave_ativa && cloud.chave_ativa !== 'Nenhuma' && cloud.chave_ativa !== m.ChaveGerada) {
-        statusText = '⚠️ PENDENTE';
-        statusBadgeClass = 'warning';
-      }
-    }
-
-    const isSelected = m._selected ? 'checked' : '';
-
-    html += `
-      <div class="machine-card ${statusClass}">
-        <div class="machine-header">
-          <div class="machine-header-left">
-            <input type="checkbox" class="machine-checkbox" data-hw="${m.HardwareID}" ${isSelected} onchange="toggleMachineSelect('${m.HardwareID}', this.checked)">
-            <div class="machine-lab">${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
-          </div>
-          <div class="machine-header-right">
-            <span class="machine-status-badge ${statusBadgeClass}">${statusText}</span>
-            ${!isClientPortal ? `<button class="btn-card-trash" onclick="deleteSingleMachine('${m.HardwareID}')" title="Excluir máquina do cadastro" style="background:rgba(233,69,96,0.15); border:1px solid rgba(233,69,96,0.4); color:#FCA5A5; cursor:pointer; font-size:12px; padding:3px 6px; border-radius:6px;">🗑️</button>` : ''}
-          </div>
+    const card = document.createElement('div');
+    card.className = 'machine-card';
+    card.innerHTML = `
+      <div class="machine-card-header">
+        <div class="machine-card-header-left">
+          <input type="checkbox" class="machine-checkbox" data-hwid="${escapeHtml(m.HardwareID)}" onchange="updateSelectCount()">
+          <span class="machine-card-title">${escapeHtml(m.NomeExibicao || m.HardwareID)}</span>
         </div>
-        <div class="machine-details">
-          ${isClientPortal ? `
-            <div class="machine-detail-item">
-              <span class="machine-detail-label">Computador</span>
-              <span class="machine-detail-value" style="font-weight:700; color:white;">${escapeHtml(m.NomeExibicao || m.HardwareID)}</span>
-            </div>
-            <div class="machine-detail-item">
-              <span class="machine-detail-label">Status Atual</span>
-              <span class="machine-detail-value" style="color:${statusClass === 'status-frozen' ? 'var(--accent-green)' : 'var(--accent-red)'}; font-weight:700;">${statusText}</span>
-            </div>
-          ` : `
-            <div class="machine-detail-item">
-              <span class="machine-detail-label">Hardware ID</span>
-              <span class="machine-detail-value">${escapeHtml(m.HardwareID)}</span>
-            </div>
-            <div class="machine-detail-item">
-              <span class="machine-detail-label">Vencimento</span>
-              <span class="machine-detail-value ${daysClass}">${expDate} (${daysText})</span>
-            </div>
-            <div class="machine-detail-item" style="grid-column: 1 / -1;">
-              <span class="machine-detail-label">Chave de Ativação</span>
-              <span class="machine-detail-value key" onclick="copyToClipboard('${escapeHtml(m.ChaveGerada || '')}')">${escapeHtml(m.ChaveGerada || 'N/A')} 📋</span>
-            </div>
-          `}
-        </div>
-      </div>`;
+        <span class="machine-status-badge ${badgeClass}">${statusLabel}</span>
+      </div>
+      <div class="machine-card-body">
+        <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
+        <div><strong>Ambiente:</strong> ${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
+        <div><strong>Validade:</strong> ${m.DataExpiracao || 'Indefinida'}</div>
+        ${cloud.pasta_persistente && cloud.pasta_persistente !== 'Nenhuma' ? `<div><strong>Pasta Persistente:</strong> ${escapeHtml(cloud.pasta_persistente)}</div>` : ''}
+      </div>
+      <div class="machine-card-footer">
+        <span>Última Sinc: ${cloud.ultima_sincronizacao || 'Sem dados recentes'}</span>
+        <button class="btn-small-action" onclick="copyMachineKey('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')">📋 Copiar Chave</button>
+      </div>
+    `;
+    container.appendChild(card);
   });
 
-  container.innerHTML = html;
   updateSelectCount();
 }
 
-function toggleMachineSelect(hwId, checked) {
-  if (!selectedClient || !selectedClient.Maquinas) return;
-  const m = selectedClient.Maquinas.find(x => x.HardwareID === hwId);
-  if (m) m._selected = checked;
-  updateSelectCount();
-}
-
-function toggleSelectAll(checked) {
-  if (!selectedClient || !selectedClient.Maquinas) return;
-  selectedClient.Maquinas.forEach(m => { m._selected = checked; });
-  renderMachineList();
+function getSelectedHwIds() {
+  const checkboxes = document.querySelectorAll('.machine-checkbox:checked');
+  return Array.from(checkboxes).map(cb => cb.dataset.hwid);
 }
 
 function updateSelectCount() {
-  const count = (selectedClient?.Maquinas || []).filter(m => m._selected).length;
-  const el = document.getElementById('select-count');
-  if (el) el.textContent = `${count} selecionada(s)`;
+  const selected = getSelectedHwIds();
+  const countEl = document.getElementById('select-count');
+  if (countEl) countEl.textContent = `${selected.length} selecionada(s)`;
 }
 
-function getSelectedMachines() {
-  if (!selectedClient || !selectedClient.Maquinas) return [];
-  return selectedClient.Maquinas.filter(m => m._selected);
-}
-
-// ============================================
-// Ações de Máquinas
-// ============================================
-
-// --- Buscar Maquinas Pendentes na Nuvem ---
-async function fetchPendingMachines() {
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/licencas?chave_ativacao=like.PENDENTE*&select=hardware_id,chave_ativacao,ultima_sincronizacao`,
-      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
-    );
-    if (!res.ok) return [];
-    return await res.json();
-  } catch (e) { return []; }
-}
-
-function parsePendingMeta(chaveAtivacao) {
-  // Format: PENDENTE|IP:xxx.xxx.xxx.xxx|HOST:NOME|LOCALIP:192.168.x.x
-  const meta = { ip: 'Desconhecido', host: 'Desconhecido', localIp: '127.0.0.1' };
-  if (!chaveAtivacao) return meta;
-  const parts = chaveAtivacao.split('|');
-  parts.forEach(p => {
-    if (p.startsWith('IP:')) meta.ip = p.substring(3);
-    if (p.startsWith('HOST:')) meta.host = p.substring(5);
-    if (p.startsWith('LOCALIP:')) meta.localIp = p.substring(8);
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.machine-checkbox').forEach(cb => {
+    cb.checked = checked;
   });
-  return meta;
+  updateSelectCount();
 }
 
-async function getMyPublicIP() {
-  try {
-    const res = await fetch('https://api.ipify.org?format=text');
-    if (res.ok) return (await res.text()).trim();
-  } catch (e) {}
-  try {
-    const res = await fetch('https://ipinfo.io/ip');
-    if (res.ok) return (await res.text()).trim();
-  } catch (e) {}
-  return null;
-}
-
-// --- Adicionar Nova Máquina (com deteccao de pendentes) ---
-async function showAddMachineModal() {
-  const ambs = getClientAmbientes(selectedClient);
-  let ambOptions = ambs.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
-
-  // Show loading modal first
-  showModal(`
-    <div class="modal-title">Nova Maquina</div>
-    <div style="text-align:center;padding:30px;">
-      <div class="spinner" style="margin:0 auto 15px;"></div>
-      <p style="color:#ccc;">Buscando maquinas na mesma rede...</p>
-    </div>
-  `);
-
-  // Fetch pending machines and admin IP in parallel
-  const [pendingList, myIp] = await Promise.all([
-    fetchPendingMachines(),
-    getMyPublicIP()
-  ]);
-
-  // Separate machines already registered for this client
-  const existingHwIds = new Set();
-  DB.forEach(c => {
-    if (c.Maquinas) c.Maquinas.forEach(m => existingHwIds.add(m.HardwareID));
+async function copyMachineKey(hwId, expDate) {
+  const exp = expDate || '2027-08-15';
+  const key = await getActivationKey(hwId, exp);
+  navigator.clipboard.writeText(key).then(() => {
+    showToast(`Chave copiada: ${key}`, 'success');
+  }).catch(() => {
+    prompt('Copie a chave de ativação:', key);
   });
+}
 
-  const unregistered = pendingList.filter(p => !existingHwIds.has(p.hardware_id));
-
-  // Categorize: same network vs remote
-  const sameNetwork = [];
-  const remoteNetwork = [];
-  unregistered.forEach(p => {
-    const meta = parsePendingMeta(p.chave_ativacao);
-    const entry = { hwId: p.hardware_id, ...meta, lastSync: p.ultima_sincronizacao };
-    if (myIp && meta.ip === myIp) {
-      sameNetwork.push(entry);
-    } else {
-      remoteNetwork.push(entry);
+// Ações Remotas em Lote
+async function freezeSelected() {
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina.', 'warning');
+    return;
+  }
+  if (confirm(`Deseja CONGELAR e proteger as ${selected.length} máquina(s) selecionada(s)? O sistema será bloqueado contra alterações.`)) {
+    for (const hwId of selected) {
+      await sendSupabaseCommand(hwId, 'FREEZE|MANTER');
     }
-  });
-
-  // Build the detected machines list
-  let detectedHtml = '';
-  if (sameNetwork.length > 0) {
-    detectedHtml += `<div class="detail-label" style="color:#4ECCA3;margin-bottom:8px;">Nesta Rede (IP: ${escapeHtml(myIp || '?')})</div>`;
-    detectedHtml += `<div class="pending-list">`;
-    sameNetwork.forEach((m, i) => {
-      detectedHtml += `
-        <label class="pending-item local" style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:#16213E;border:1px solid #4ECCA3;border-radius:8px;cursor:pointer;">
-          <input type="radio" name="pending-machine" value="${escapeHtml(m.hwId)}" ${i === 0 ? 'checked' : ''} onchange="onPendingSelect(this.value)">
-          <div style="flex:1;">
-            <div style="color:#4ECCA3;font-weight:bold;font-size:14px;">${escapeHtml(m.hwId)}</div>
-            <div style="color:#ccc;font-size:11px;">PC: ${escapeHtml(m.host)} | IP Local: ${escapeHtml(m.localIp)}</div>
-            <div style="color:#888;font-size:10px;">Detectado: ${escapeHtml(m.lastSync || '?')}</div>
-          </div>
-          <span style="color:#4ECCA3;font-size:18px;">&#10004;</span>
-        </label>`;
-    });
-    detectedHtml += `</div>`;
-  }
-
-  if (remoteNetwork.length > 0) {
-    detectedHtml += `<div class="detail-label" style="color:#F39C12;margin-top:12px;margin-bottom:8px;">Outras Redes (Remotas)</div>`;
-    detectedHtml += `<div class="pending-list">`;
-    remoteNetwork.forEach(m => {
-      detectedHtml += `
-        <label class="pending-item remote" style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:#1a1a2e;border:1px solid #555;border-radius:8px;cursor:pointer;opacity:0.7;">
-          <input type="radio" name="pending-machine" value="${escapeHtml(m.hwId)}" onchange="onPendingSelect(this.value)">
-          <div style="flex:1;">
-            <div style="color:#F39C12;font-weight:bold;font-size:14px;">${escapeHtml(m.hwId)}</div>
-            <div style="color:#ccc;font-size:11px;">PC: ${escapeHtml(m.host)} | IP: ${escapeHtml(m.ip)}</div>
-            <div style="color:#888;font-size:10px;">Detectado: ${escapeHtml(m.lastSync || '?')}</div>
-          </div>
-          <span style="color:#F39C12;font-size:14px;">&#9888;</span>
-        </label>`;
-    });
-    detectedHtml += `</div>`;
-  }
-
-  const hasDetected = sameNetwork.length > 0 || remoteNetwork.length > 0;
-  const defaultHwId = sameNetwork.length > 0 ? sameNetwork[0].hwId : '';
-
-  let manualHtml = `
-    <div id="manual-hwid-section" style="display:${hasDetected ? 'none' : 'block'};">
-      <div class="detail-field">
-        <div class="detail-label">Hardware ID (Ex: AS-A1B2C3D4)</div>
-        <input type="text" class="detail-input" id="modal-hwid" placeholder="AS-XXXXXXXX" autocapitalize="characters" style="text-transform: uppercase;">
-      </div>
-    </div>`;
-
-  let toggleBtn = hasDetected ? `
-    <button class="action-btn" onclick="toggleManualHwId()" id="btn-toggle-manual"
-      style="background:transparent;border:1px solid #555;color:#aaa;font-size:12px;width:100%;margin-bottom:12px;">
-      Digitar Hardware ID manualmente
-    </button>` : '';
-
-  showModal(`
-    <div class="modal-title">Nova Maquina</div>
-    ${hasDetected ? `<div style="color:#4ECCA3;font-size:12px;margin-bottom:12px;">Maquinas detectadas automaticamente:</div>` : ''}
-    ${detectedHtml}
-    ${toggleBtn}
-    ${manualHtml}
-    <input type="hidden" id="selected-pending-hwid" value="${escapeHtml(defaultHwId)}">
-    <div class="detail-field">
-      <div class="detail-label">Ambiente / Laboratorio</div>
-      <select class="filter-select" id="modal-ambiente" style="width:100%">${ambOptions}</select>
-    </div>
-    <div class="renewal-option">
-      <input type="checkbox" id="modal-anual" checked>
-      <label for="modal-anual">Renovacao anual (+365 dias)</label>
-    </div>
-    <div class="renewal-input-group">
-      <label>Dias Extras (Bonus / Teste)</label>
-      <input type="number" id="modal-dias-extras" value="0" min="0" inputmode="numeric">
-    </div>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-confirm" onclick="confirmAddMachine()">Confirmar</button>
-    </div>
-  `);
-}
-
-function onPendingSelect(hwId) {
-  const el = document.getElementById('selected-pending-hwid');
-  if (el) el.value = hwId;
-}
-
-function toggleManualHwId() {
-  const section = document.getElementById('manual-hwid-section');
-  const btn = document.getElementById('btn-toggle-manual');
-  const hiddenInput = document.getElementById('selected-pending-hwid');
-  if (section.style.display === 'none') {
-    section.style.display = 'block';
-    btn.textContent = 'Usar maquina detectada';
-    // Uncheck all radios
-    document.querySelectorAll('input[name="pending-machine"]').forEach(r => r.checked = false);
-    if (hiddenInput) hiddenInput.value = '';
-  } else {
-    section.style.display = 'none';
-    btn.textContent = 'Digitar Hardware ID manualmente';
-    // Re-select first radio
-    const first = document.querySelector('input[name="pending-machine"]');
-    if (first) { first.checked = true; if (hiddenInput) hiddenInput.value = first.value; }
+    showToast(`Comando de congelamento enviado para ${selected.length} máquina(s)!`, 'success');
+    refreshAll();
   }
 }
 
-async function confirmAddMachine() {
-  // First check if a pending machine was selected via radio
-  const pendingHwId = document.getElementById('selected-pending-hwid')?.value?.trim() || '';
-  const manualHwId = document.getElementById('modal-hwid')?.value?.toUpperCase().trim() || '';
-  const hwId = pendingHwId || manualHwId;
-  const ambiente = document.getElementById('modal-ambiente').value;
-  const anual = document.getElementById('modal-anual').checked;
-  const diasExtras = parseInt(document.getElementById('modal-dias-extras').value) || 0;
+async function thawSelected() {
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina.', 'warning');
+    return;
+  }
+  if (confirm(`Deseja DESCONGELAR as ${selected.length} máquina(s) selecionada(s)? As alterações serão mantidas.`)) {
+    for (const hwId of selected) {
+      await sendSupabaseCommand(hwId, 'THAW');
+    }
+    showToast(`Comando de descongelamento enviado para ${selected.length} máquina(s)!`, 'success');
+    refreshAll();
+  }
+}
 
-  if (!hwId.match(/^AS-[A-F0-9]{8}$/)) {
-    showToast('Selecione uma maquina detectada ou digite um Hardware ID valido (AS-XXXXXXXX)', 'error');
+async function revokeSelected() {
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina.', 'warning');
+    return;
+  }
+  if (confirm(`⚠️ ATENÇÃO: Deseja REVOGAR a licença das ${selected.length} máquina(s)? Elas perderão a ativação imediatamente.`)) {
+    for (const hwId of selected) {
+      await sendSupabaseCommand(hwId, 'REVOKE');
+    }
+    showToast(`Licença revogada em ${selected.length} máquina(s)!`, 'success');
+    refreshAll();
+  }
+}
+
+async function uninstallSelected() {
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina.', 'warning');
+    return;
+  }
+  if (confirm(`🚨 PERIGO: Deseja DESINSTALAR COMPLETAMENTE o Área Segura nas ${selected.length} máquina(s)? Esta ação é irreversível e reiniciará os computadores.`)) {
+    for (const hwId of selected) {
+      await sendSupabaseCommand(hwId, 'UNINSTALL');
+    }
+    showToast(`Comando de desinstalação enviado para ${selected.length} máquina(s)!`, 'success');
+    refreshAll();
+  }
+}
+
+function showRenewModal() {
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina para renovar.', 'warning');
     return;
   }
 
-  const existing = selectedClient.Maquinas?.find(m => m.HardwareID === hwId);
+  const expDate = prompt('Digite a nova data de validade da licença (AAAA-MM-DD):', '2027-08-15');
+  if (expDate && /^\d{4}-\d{2}-\d{2}$/.test(expDate.trim())) {
+    const cleanDate = expDate.trim();
+    selected.forEach(async hwId => {
+      const chave = await getActivationKey(hwId, cleanDate);
+      await syncSupabase(hwId, chave, cleanDate);
+      
+      // Atualizar local
+      if (selectedClient && selectedClient.Maquinas) {
+        const maq = selectedClient.Maquinas.find(m => m.HardwareID === hwId);
+        if (maq) {
+          maq.DataExpiracao = cleanDate;
+          maq.ChaveGerada = chave;
+        }
+      }
+    });
 
-  if (existing) {
-    // Renovar existente
-    let currentExp = new Date(existing.DataExpiracao);
-    if (currentExp < new Date()) currentExp = new Date();
-    if (anual) currentExp.setFullYear(currentExp.getFullYear() + 1);
-    currentExp.setDate(currentExp.getDate() + diasExtras);
-    const newExp = formatDateISO(currentExp);
-
-    existing.DataExpiracao = newExp;
-    existing.ChaveGerada = await getActivationKey(hwId, newExp);
-    await syncSupabase(hwId, existing.ChaveGerada, newExp);
     saveDB();
-    closeModal();
+    showToast(`Licenças renovadas até ${cleanDate}!`, 'success');
     renderMachineList();
-    showToast(`Máquina renovada! Chave: ${existing.ChaveGerada}`, 'success');
-  } else {
-    // Nova máquina
-    let expDate = new Date();
-    if (anual) expDate.setFullYear(expDate.getFullYear() + 1);
-    expDate.setDate(expDate.getDate() + diasExtras);
-    const newExp = formatDateISO(expDate);
-    const key = await getActivationKey(hwId, newExp);
+  }
+}
+
+function showUpdateModal() {
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina para atualizar o executável.', 'warning');
+    return;
+  }
+
+  const defaultUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura.exe';
+  const url = prompt('URL do novo executável AreaSegura.exe:', defaultUrl);
+  if (url && url.trim().startsWith('http')) {
+    const cleanUrl = url.trim();
+    selected.forEach(async hwId => {
+      await sendSupabaseCommand(hwId, `UPDATE|${cleanUrl}`);
+    });
+    showToast(`Comando de atualização enviado para ${selected.length} máquina(s)!`, 'success');
+  }
+}
+
+function showAddMachineModal() {
+  const hwId = prompt('Digite o Hardware ID da nova máquina (ex: AS-A1B2C3D4):');
+  if (hwId && hwId.trim()) {
+    const cleanHw = hwId.trim().toUpperCase();
+    const amb = prompt('Ambiente / Laboratório:', (selectedClient.Ambientes && selectedClient.Ambientes[0]) || 'Lab Principal') || 'Lab Principal';
+    const exp = prompt('Data de Expiração (AAAA-MM-DD):', '2027-08-15') || '2027-08-15';
 
     if (!selectedClient.Maquinas) selectedClient.Maquinas = [];
     selectedClient.Maquinas.push({
       Id: generateId(),
-      Laboratorio: ambiente,
-      HardwareID: hwId,
-      DataExpiracao: newExp,
-      ChaveGerada: key
+      Laboratorio: amb,
+      HardwareID: cleanHw,
+      DataExpiracao: exp,
+      NomeExibicao: cleanHw
     });
 
-    await syncSupabase(hwId, key, newExp);
-    saveDB();
-    closeModal();
-    renderMachineList();
-    showToast(`Máquina adicionada! Chave: ${key}`, 'success');
-  }
-}
-
-// ============================================
-// Ativação Rápida de Máquinas da Nuvem (1 Toque)
-// ============================================
-async function quickActivateModal(hwId, host) {
-  if (DB.length === 0) {
-    showToast('Cadastre um cliente primeiro para vincular a máquina.', 'warning');
-    return;
-  }
-
-  let clientOptions = DB.map(c => `<option value="${c.Id}">${escapeHtml(c.Instituicao || 'Sem Nome')}</option>`).join('');
-
-  showModal(`
-    <div class="modal-title">⚡ Ativação Rápida de Máquina</div>
-    <div style="font-size:12px; color:var(--text-muted); margin-bottom:15px;">
-      A máquina será ativada, licenciada e conectada na nuvem instantaneamente.
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Hardware ID</label>
-      <input type="text" class="form-input" value="${escapeHtml(hwId)}" readonly style="color:var(--accent-green); font-weight:bold;">
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Nome / Identificação</label>
-      <input type="text" class="form-input" id="quick-mac-name" value="${escapeHtml(host !== 'Desconhecido' && host ? host : hwId)}">
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Vincular ao Cliente</label>
-      <select class="form-input" id="quick-mac-client">${clientOptions}</select>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Ambiente / Laboratório</label>
-      <input type="text" class="form-input" id="quick-mac-amb" value="Lab Principal">
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Período de Validade</label>
-      <select class="form-input" id="quick-mac-period">
-        <option value="365" selected>1 Ano</option>
-        <option value="730">2 Anos</option>
-        <option value="1825">5 Anos</option>
-        <option value="3650">10 Anos (Vitalícia)</option>
-      </select>
-    </div>
-
-    <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn-primary" onclick="confirmQuickActivate('${escapeHtml(hwId)}')">✅ Ativar Agora</button>
-    </div>
-  `);
-}
-
-async function confirmQuickActivate(hwId) {
-  const name = document.getElementById('quick-mac-name').value.trim() || hwId;
-  const clientId = document.getElementById('quick-mac-client').value;
-  const ambiente = document.getElementById('quick-mac-amb').value.trim() || 'Lab Principal';
-  const periodDays = parseInt(document.getElementById('quick-mac-period').value) || 365;
-
-  const client = DB.find(c => c.Id === clientId);
-  if (!client) {
-    showToast('Cliente não encontrado.', 'error');
-    return;
-  }
-
-  const exp = new Date();
-  exp.setDate(exp.getDate() + periodDays);
-  const expDateStr = formatDateISO(exp);
-
-  const key = await getActivationKey(hwId, expDateStr);
-
-  if (!client.Maquinas) client.Maquinas = [];
-  
-  // Se já existe no cliente, atualiza; senão, adiciona
-  const existingIdx = client.Maquinas.findIndex(m => m.HardwareID === hwId);
-  const newMachineObj = {
-    Id: generateId(),
-    Laboratorio: ambiente,
-    HardwareID: hwId,
-    DataExpiracao: expDateStr,
-    ChaveGerada: key,
-    NomeExibicao: name
-  };
-
-  if (existingIdx >= 0) {
-    client.Maquinas[existingIdx] = newMachineObj;
-  } else {
-    client.Maquinas.push(newMachineObj);
-  }
-
-  await syncSupabase(hwId, key, expDateStr);
-  await saveDB();
-
-  closeModal();
-  showToast(`🎉 Máquina "${name}" ativada com sucesso!`, 'success');
-  renderDashboard();
-}
-
-// --- Renovar em Lote ---
-function showRenewModal() {
-  const selected = getSelectedMachines();
-  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
-
-  showModal(`
-    <div class="modal-title">🔑 Renovar ${selected.length} Máquina(s)</div>
-    <div class="renewal-option">
-      <input type="checkbox" id="modal-renew-anual" checked>
-      <label for="modal-renew-anual">Renovação anual (+365 dias)</label>
-    </div>
-    <div class="renewal-input-group">
-      <label>Dias Extras (Bônus / Teste)</label>
-      <input type="number" id="modal-renew-extras" value="0" min="0" inputmode="numeric">
-    </div>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-orange" onclick="confirmRenew()">Gerar Chaves</button>
-    </div>
-  `);
-}
-
-async function confirmRenew() {
-  const selected = getSelectedMachines();
-  const anual = document.getElementById('modal-renew-anual').checked;
-  const diasExtras = parseInt(document.getElementById('modal-renew-extras').value) || 0;
-
-  for (const m of selected) {
-    let currentExp = new Date(m.DataExpiracao);
-    if (currentExp < new Date()) currentExp = new Date();
-    if (anual) currentExp.setFullYear(currentExp.getFullYear() + 1);
-    currentExp.setDate(currentExp.getDate() + diasExtras);
-    const newExp = formatDateISO(currentExp);
-
-    m.DataExpiracao = newExp;
-    m.ChaveGerada = await getActivationKey(m.HardwareID, newExp);
-    await syncSupabase(m.HardwareID, m.ChaveGerada, newExp);
-  }
-
-  saveDB();
-  closeModal();
-  renderMachineList();
-  showToast(`${selected.length} máquina(s) renovada(s)!`, 'success');
-}
-
-// --- Congelar ---
-function freezeSelected() {
-  const selected = getSelectedMachines();
-  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
-
-  showModal(`
-    <div class="modal-title">🧊 Congelar ${selected.length} Máquina(s)</div>
-    <div style="margin-bottom:15px; text-align:left;">
-      <label style="color:var(--text-secondary); font-size:12px; font-weight:600; text-transform:uppercase; display:block; margin-bottom:8px;">Pasta Persistente:</label>
-      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
-        <label style="font-size:13px; color:var(--text-primary); display:flex; align-items:center; gap:8px; cursor:pointer;">
-          <input type="radio" name="persistAction" value="MANTER" checked onchange="togglePersistInput(false)">
-          Manter configuração atual
-        </label>
-        <label style="font-size:13px; color:var(--text-primary); display:flex; align-items:center; gap:8px; cursor:pointer;">
-          <input type="radio" name="persistAction" value="ALTERAR" onchange="togglePersistInput(true)">
-          Definir / Criar nova pasta
-        </label>
-        
-        <div id="persist-presets-container" style="display:none; margin-left:6px; padding:12px; background:rgba(0,0,0,0.25); border:1px solid rgba(78,204,163,0.3); border-radius:8px;">
-          <div style="font-size:11px; color:#4ECCA3; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">Selecione o local pré-definido:</div>
-          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
-            <button type="button" class="preset-loc-btn" onclick="selectPersistPreset('DOCS')" style="padding:10px 12px; text-align:left; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:white; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:8px; font-family:'Inter',sans-serif;">
-              <span style="font-size:16px;">📁</span>
-              <div>
-                <div style="font-weight:600; color:#FFFFFF;">Meus Documentos</div>
-                <div style="font-size:10px; color:#A2A2A2;">C:\\Users\\Public\\Documents\\Pasta_Segura</div>
-              </div>
-            </button>
-            <button type="button" class="preset-loc-btn" onclick="selectPersistPreset('DRIVE_C')" style="padding:10px 12px; text-align:left; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:white; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:8px; font-family:'Inter',sans-serif;">
-              <span style="font-size:16px;">💾</span>
-              <div>
-                <div style="font-weight:600; color:#FFFFFF;">Unidade C: (Raiz)</div>
-                <div style="font-size:10px; color:#A2A2A2;">C:\\Pasta_Segura</div>
-              </div>
-            </button>
-            <button type="button" class="preset-loc-btn" onclick="selectPersistPreset('DESKTOP')" style="padding:10px 12px; text-align:left; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:white; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:8px; font-family:'Inter',sans-serif;">
-              <span style="font-size:16px;">🖥️</span>
-              <div>
-                <div style="font-weight:600; color:#FFFFFF;">Área de Trabalho (Desktop)</div>
-                <div style="font-size:10px; color:#A2A2A2;">C:\\Users\\Public\\Desktop\\Pasta_Segura</div>
-              </div>
-            </button>
-          </div>
-          <div style="font-size:11px; color:var(--text-secondary); margin-bottom:4px; font-weight:500;">Caminho da pasta persistente:</div>
-          <input type="text" id="modal-persist-folder" class="detail-input" value="C:\\Users\\Public\\Documents\\Pasta_Segura" style="font-size:12px; margin-top:2px;" />
-        </div>
-
-        <label style="font-size:13px; color:#E74C3C; display:flex; align-items:center; gap:8px; cursor:pointer;">
-          <input type="radio" name="persistAction" value="REMOVE" onchange="togglePersistInput(false)">
-          Remover pasta (Blindar 100%)
-        </label>
-      </div>
-    </div>
-    <div style="margin-bottom:20px; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; text-align:left;">
-      <label style="font-size:13px; color:#F39C12; font-weight:600; display:flex; align-items:center; gap:8px; cursor:pointer;">
-        <input type="checkbox" id="modal-block-games" checked>
-        Filtro de Jogos e Conteúdo +18
-      </label>
-    </div>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-confirm" onclick="confirmFreeze()">Confirmar</button>
-    </div>
-  `);
-}
-
-function togglePersistInput(show) {
-  const container = document.getElementById('persist-presets-container');
-  if (container) container.style.display = show ? 'block' : 'none';
-}
-
-function selectPersistPreset(type) {
-  const input = document.getElementById('modal-persist-folder');
-  if (!input) return;
-  if (type === 'DOCS') {
-    input.value = 'C:\\Users\\Public\\Documents\\Pasta_Segura';
-  } else if (type === 'DRIVE_C') {
-    input.value = 'C:\\Pasta_Segura';
-  } else if (type === 'DESKTOP') {
-    input.value = 'C:\\Users\\Public\\Desktop\\Pasta_Segura';
-  }
-}
-
-async function confirmFreeze() {
-  const selected = getSelectedMachines();
-  const actionRadio = document.querySelector('input[name="persistAction"]:checked')?.value || 'MANTER';
-  const blockGames = document.getElementById('modal-block-games')?.checked ? 'TRUE' : 'FALSE';
-  
-  let persistArg = 'MANTER';
-  if (actionRadio === 'REMOVE') {
-    persistArg = 'REMOVE';
-  } else if (actionRadio === 'ALTERAR') {
-    const customPath = document.getElementById('modal-persist-folder')?.value.trim();
-    if (customPath) {
-      persistArg = customPath;
-    }
-  }
-  
-  const cmd = `FREEZE:${persistArg}|BLOCKGAMES:${blockGames}`;
-  for (const m of selected) {
-    await sendSupabaseCommand(m.HardwareID, cmd);
-    if (!cloudStatuses[m.HardwareID]) cloudStatuses[m.HardwareID] = {};
-    cloudStatuses[m.HardwareID].status_protecao = 'CONGELADO';
-  }
-  closeModal();
-  renderMachineList();
-  showToast(`Comando CONGELAR enviado para ${selected.length} máquina(s)!`, 'success');
-}
-
-// --- Descongelar ---
-async function thawSelected() {
-  const selected = getSelectedMachines();
-  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
-
-  showModal(`
-    <div class="modal-title">🔥 Descongelar / Desbloquear ${selected.length} Máquina(s)</div>
-    <p style="color: var(--text-secondary); font-size: 14px; text-align: center; margin-bottom: 20px;">
-      As máquinas entrarão em Modo Manutenção (descongeladas/desbloqueadas) na próxima checagem.
-    </p>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:#E74C3C; color:white; text-transform:uppercase;" onclick="confirmThaw()">Descongelar</button>
-    </div>
-  `);
-}
-
-async function confirmThaw() {
-  const selected = getSelectedMachines();
-  for (const m of selected) {
-    await sendSupabaseCommand(m.HardwareID, 'THAW');
-    if (!cloudStatuses[m.HardwareID]) cloudStatuses[m.HardwareID] = {};
-    cloudStatuses[m.HardwareID].status_protecao = 'DESCONGELADO';
-  }
-  closeModal();
-  renderMachineList();
-  showToast(`Comando DESCONGELAR enviado para ${selected.length} máquina(s)!`, 'success');
-}
-
-// --- Revogar ---
-async function revokeSelected() {
-  const selected = getSelectedMachines();
-  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
-
-  showModal(`
-    <div class="modal-title">🚫 Revogar ${selected.length} Licença(s)</div>
-    <p style="color: var(--accent-red); font-size: 14px; text-align: center; margin-bottom: 20px; font-weight: 600;">
-      ⚠️ ATENÇÃO: As chaves serão invalidadas e as máquinas bloqueadas permanentemente!
-    </p>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:#C0392B; color:white; text-transform:uppercase;" onclick="confirmRevoke()">Revogar</button>
-    </div>
-  `);
-}
-
-async function confirmRevoke() {
-  const selected = getSelectedMachines();
-  for (const m of selected) {
-    m.DataExpiracao = '1970-01-01';
-    m.ChaveGerada = 'REVOGADA';
-    await syncSupabase(m.HardwareID, 'REVOGADA', '1970-01-01');
-    await sendSupabaseCommand(m.HardwareID, 'REVOKE');
-  }
-  saveDB();
-  closeModal();
-  renderMachineList();
-  showToast(`${selected.length} licença(s) REVOGADA(s)!`, 'success');
-}
-
-// --- Atualização OTA ---
-function showUpdateModal() {
-  const selected = getSelectedMachines();
-  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
-
-  const defaultUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura.exe';
-
-  showModal(`
-    <div class="modal-title">🔄 Atualizar ${selected.length} Máquina(s)</div>
-    <p style="color:var(--text-secondary); font-size:12px; margin-bottom:12px; text-align:center;">
-      O novo binário do Área Segura será baixado e instalado silenciosamente no Windows do notebook/PC selecionado.
-    </p>
-    <div class="detail-field">
-      <div class="detail-label">URL Direta do Executável (.exe)</div>
-      <input type="url" class="detail-input" id="modal-update-url" value="${defaultUrl}">
-    </div>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:var(--accent-purple); color:white; text-transform:uppercase;" onclick="confirmUpdate()">Enviar Atualização</button>
-    </div>
-  `);
-}
-
-async function confirmUpdate() {
-  const url = document.getElementById('modal-update-url').value.trim();
-  if (!url) { showToast('Digite uma URL válida', 'error'); return; }
-
-  const selected = getSelectedMachines();
-  for (const m of selected) {
-    await sendSupabaseCommand(m.HardwareID, `UPDATE|${url}`);
-  }
-  closeModal();
-  showToast(`Atualização enviada para ${selected.length} máquina(s)!`, 'success');
-}
-
-// --- Excluir Máquina do Cadastro ---
-function deleteSingleMachine(hwId) {
-  if (!selectedClient || !selectedClient.Maquinas) return;
-  const m = selectedClient.Maquinas.find(x => x.HardwareID === hwId);
-  if (!m) return;
-
-  showModal(`
-    <div class="modal-title" style="color:#E94560;">🗑️ Remover Máquina</div>
-    <p style="color:#ccc; margin-bottom:15px; text-align:center; font-size:13px;">
-      Deseja remover a máquina <strong style="color:white;">${escapeHtml(hwId)}</strong> do cadastro de <strong>${escapeHtml(selectedClient.Instituicao)}</strong>?
-    </p>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-confirm" style="background:#E94560;" onclick="confirmDeleteSingleMachine('${escapeHtml(hwId)}')">REMOVER</button>
-    </div>
-  `);
-}
-
-async function confirmDeleteSingleMachine(hwId) {
-  if (!selectedClient || !selectedClient.Maquinas) return;
-  const idx = selectedClient.Maquinas.findIndex(x => x.HardwareID === hwId);
-  if (idx >= 0) {
-    selectedClient.Maquinas.splice(idx, 1);
-    try {
-      await fetch(`${SUPABASE_URL}/licencas?hardware_id=eq.${hwId}`, {
-        method: 'DELETE',
-        headers: supaHeaders
-      });
-    } catch (e) {}
-    saveDB();
-    closeModal();
-    renderMachineList();
-    showToast(`Máquina ${hwId} removida com sucesso!`, 'success');
+    getActivationKey(cleanHw, exp).then(chave => {
+      syncSupabase(cleanHw, chave, exp);
+      saveDB();
+      renderMachineList();
+      showToast(`Máquina ${cleanHw} cadastrada com sucesso!`, 'success');
+    });
   }
 }
 
 function deleteSelectedMachines() {
-  const selected = getSelectedMachines();
-  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
-
-  showModal(`
-    <div class="modal-title" style="color:#E94560;">🗑️ Remover ${selected.length} Máquina(s)</div>
-    <p style="color:#ccc; margin-bottom:15px; text-align:center; font-size:13px;">
-      Deseja remover as <strong>${selected.length} máquina(s)</strong> selecionadas do cadastro deste cliente?
-    </p>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-confirm" style="background:#E94560;" onclick="confirmDeleteSelectedMachines()">REMOVER</button>
-    </div>
-  `);
-}
-
-async function confirmDeleteSelectedMachines() {
-  const selected = getSelectedMachines();
-  for (const m of selected) {
-    const idx = selectedClient.Maquinas.findIndex(x => x.HardwareID === m.HardwareID);
-    if (idx >= 0) selectedClient.Maquinas.splice(idx, 1);
-    try {
-      await fetch(`${SUPABASE_URL}/licencas?hardware_id=eq.${m.HardwareID}`, {
-        method: 'DELETE',
-        headers: supaHeaders
-      });
-    } catch (e) {}
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina para excluir do cadastro.', 'warning');
+    return;
   }
-  saveDB();
-  closeModal();
-  renderMachineList();
-  showToast(`${selected.length} máquina(s) removida(s) do cadastro!`, 'success');
-}
-
-// --- Desinstalar Remotamente do PC ---
-function uninstallSelected() {
-  const selected = getSelectedMachines();
-  if (selected.length === 0) { showToast('Selecione pelo menos uma máquina', 'warning'); return; }
-
-  showModal(`
-    <div class="modal-title" style="color:#E94560;">⚡ Desinstalar Remotamente (${selected.length} máquinas)</div>
-    <p style="color: #ccc; font-size: 14px; text-align: center; margin-bottom: 20px;">
-      Deseja realmente <strong>DESINSTALAR</strong> o Área Segura dos computadores selecionados?<br>
-      <span style="font-size:12px; color:var(--text-secondary); display:block; margin-top:8px;">O programa será removido do Windows, a internet será 100% liberada e o computador será reiniciado.</span>
-    </p>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button style="flex:1; padding:14px; border:none; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; font-weight:700; cursor:pointer; background:#E94560; color:white; text-transform:uppercase;" onclick="confirmUninstall()">Confirmar Desinstalação</button>
-    </div>
-  `);
-}
-
-async function confirmUninstall() {
-  const selected = getSelectedMachines();
-  for (const m of selected) {
-    await sendSupabaseCommand(m.HardwareID, 'UNINSTALL');
-    if (cloudStatuses[m.HardwareID]) {
-      cloudStatuses[m.HardwareID].status_protecao = 'DESINSTALADO';
-    }
+  if (confirm(`Excluir as ${selected.length} máquina(s) do cadastro deste cliente?`)) {
+    selectedClient.Maquinas = (selectedClient.Maquinas || []).filter(m => !selected.includes(m.HardwareID));
+    saveDB();
+    renderMachineList();
+    showToast(`${selected.length} máquina(s) removida(s) do cadastro!`, 'success');
   }
-  closeModal();
-  showToast(`Comando de DESINSTALAÇÃO enviado para ${selected.length} máquina(s)!`, 'success');
-  setTimeout(() => renderMachineList(), 1000);
+}
+
+function showDeleteClientModal() {
+  if (!selectedClient) return;
+  if (confirm(`⚠️ Tem certeza de que deseja EXCLUIR o cliente "${selectedClient.Instituicao}" e todas as suas máquinas?`)) {
+    DB = DB.filter(c => c.Id !== selectedClient.Id);
+    saveDB();
+    showToast('Cliente excluído com sucesso!', 'success');
+    navigateTo('clients');
+  }
+}
+
+function showNewClientModal() {
+  const name = prompt('Nome da Instituição / Escola / Empresa:');
+  if (name && name.trim()) {
+    const newClient = {
+      Id: generateId(),
+      Instituicao: name.trim(),
+      Responsavel: prompt('Responsável:') || '',
+      Localidade: prompt('Localidade / Endereço:') || '',
+      Contato: prompt('Contato (WhatsApp / Telefone):') || '',
+      Ambientes: ['Lab Principal'],
+      Maquinas: [],
+      NomeExibicao: name.trim()
+    };
+    DB.unshift(newClient);
+    saveDB();
+    showToast(`Cliente "${newClient.Instituicao}" criado!`, 'success');
+    navigateTo('detail', newClient);
+  }
 }
 
 // ============================================
@@ -1611,243 +836,56 @@ async function confirmUninstall() {
 function renderExpiringReport() {
   const container = document.getElementById('expiring-list');
   if (!container) return;
+  container.innerHTML = '';
 
-  let expList = [];
+  const now = new Date();
+  const thirtyDaysAhead = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  const expiringList = [];
   DB.forEach(c => {
     (c.Maquinas || []).forEach(m => {
-      const days = getDaysRemaining(m.DataExpiracao);
-      if (days <= 30) {
-        expList.push({
-          clientId: c.Id,
-          instituicao: c.Instituicao,
-          laboratorio: m.Laboratorio || 'Lab Principal',
-          hardwareId: m.HardwareID,
-          dataExp: formatDate(m.DataExpiracao),
-          days: days,
-          statusText: days <= 0 ? `VENCIDA HÁ ${Math.abs(days)} DIAS` : `VENCE EM ${days} DIAS`,
-          isExpired: days <= 0
-        });
+      if (m.DataExpiracao) {
+        const exp = new Date(m.DataExpiracao);
+        if (exp <= thirtyDaysAhead) {
+          expiringList.push({ client: c, machine: m, expDate: exp });
+        }
       }
     });
   });
 
-  if (expList.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">✅</div>
-        <div class="empty-state-text">Todas as licenças estão em dia!</div>
-      </div>`;
+  if (expiringList.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">🎉 Todas as máquinas estão com licenças regulares em dia!</div></div>';
     return;
   }
 
-  expList.sort((a, b) => a.days - b.days);
+  expiringList.sort((a, b) => a.expDate - b.expDate);
 
-  let html = '';
-  expList.forEach(item => {
-    html += `
-      <div class="expiring-item ${item.isExpired ? 'expired' : ''}" onclick="navigateTo('detail', DB.find(x => x.Id === '${item.clientId}'))">
-        <div class="expiring-item-title">${escapeHtml(item.instituicao)}</div>
-        <div class="expiring-item-meta">${escapeHtml(item.laboratorio)} • ${item.hardwareId} • ${item.dataExp}</div>
-        <div class="expiring-item-status" style="color: ${item.isExpired ? 'var(--accent-red)' : 'var(--accent-orange)'}">
-          ${item.statusText}
-        </div>
-      </div>`;
-  });
-
-  container.innerHTML = html;
-}
-
-// ============================================
-// Novo Cliente
-// ============================================
-function showNewClientModal() {
-  showModal(`
-    <div class="modal-title">👤 Novo Cliente</div>
-    <div class="detail-field">
-      <div class="detail-label">Nome da Instituição / Cliente</div>
-      <input type="text" class="detail-input" id="modal-new-name" placeholder="Ex: Escola Municipal...">
-    </div>
-    <div class="modal-buttons">
-      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn-confirm" onclick="confirmNewClient()">Cadastrar</button>
-    </div>
-  `);
-}
-
-function confirmNewClient() {
-  const name = document.getElementById('modal-new-name').value.trim();
-  if (!name) { showToast('Digite o nome do cliente', 'error'); return; }
-
-  const newClient = {
-    Id: generateId(),
-    Instituicao: name,
-    Localidade: '',
-    Responsavel: '',
-    Contato: '',
-    Ambientes: ['Lab Principal'],
-    Maquinas: [],
-    NomeExibicao: name,
-    CorAlerta: 'White'
-  };
-
-  DB.push(newClient);
-  saveDB();
-  closeModal();
-  showToast(`Cliente "${name}" cadastrado!`, 'success');
-  navigateTo('detail', newClient);
-}
-
-// ============================================
-// Importar/Exportar Banco de Dados
-// ============================================
-function exportDB() {
-  const data = JSON.stringify(DB, null, 2);
-  const blob = new Blob([data], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `banco_clientes_${new Date().toISOString().split('T')[0]}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('Banco exportado com sucesso!', 'success');
-}
-
-function importDB() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-  input.onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (Array.isArray(data)) {
-          DB = data;
-          saveDB();
-          showToast(`${data.length} cliente(s) importado(s)!`, 'success');
-          navigateTo('dashboard');
-        } else {
-          showToast('Formato inválido', 'error');
-        }
-      } catch (err) {
-        showToast('Erro ao ler arquivo', 'error');
-      }
-    };
-    reader.readAsText(file);
-  };
-  input.click();
-}
-
-// ============================================
-// Modal System
-// ============================================
-function showModal(content) {
-  closeModal();
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.id = 'app-modal';
-  overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
-  overlay.innerHTML = `
-    <div class="modal-content">
-      <div class="modal-handle"></div>
-      ${content}
-    </div>
-  `;
-  document.body.appendChild(overlay);
-}
-
-function closeModal() {
-  const modal = document.getElementById('app-modal');
-  if (modal) modal.remove();
-}
-
-// ============================================
-// Utilitários
-// ============================================
-function escapeHtml(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-function generateId() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  expiringList.forEach(item => {
+    const isExpired = item.expDate < now;
+    const diffDays = Math.ceil((item.expDate - now) / (1000 * 60 * 60 * 24));
+    
+    const card = document.createElement('div');
+    card.className = `client-card ${isExpired ? 'expired-card' : ''}`;
+    card.style.borderLeft = `4px solid ${isExpired ? 'var(--accent-red)' : 'var(--accent-orange)'}`;
+    card.innerHTML = `
+      <div class="client-card-header">
+        <span class="client-card-name">${escapeHtml(item.client.Instituicao)}</span>
+        <span class="client-card-tag" style="color:${isExpired ? 'var(--accent-red)' : 'var(--accent-orange)'};">
+          ${isExpired ? 'VENCIDA' : `${diffDays} dia(s) restante(s)`}
+        </span>
+      </div>
+      <div class="client-card-meta">
+        <span>🖥️ ${escapeHtml(item.machine.NomeExibicao || item.machine.HardwareID)}</span>
+        <span>📅 Vence em: ${item.machine.DataExpiracao}</span>
+      </div>
+    `;
+    card.onclick = () => navigateTo('machines', item.client);
+    container.appendChild(card);
   });
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return 'N/A';
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
-function formatDateISO(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function copyToClipboard(text) {
-  if (!text || text === 'N/A' || text === 'REVOGADA') return;
-  navigator.clipboard.writeText(text).then(() => {
-    showToast('Chave copiada! 📋', 'success');
-  }).catch(() => {
-    // Fallback
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showToast('Chave copiada! 📋', 'success');
-  });
-}
-
-function showToast(message, type = 'success') {
-  const existing = document.querySelector('.toast');
-  if (existing) existing.remove();
-
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-
-  requestAnimationFrame(() => {
-    toast.classList.add('show');
-  });
-
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 400);
-  }, 3500);
-}
-
-async function refreshAll() {
-  const btn = document.querySelector('.header-refresh');
-  if (btn) btn.classList.add('spinning');
-
-  await syncFromCloud();
-
-  if (currentPage === 'dashboard') renderDashboard();
-  else if (currentPage === 'clients') renderClientList();
-  else if (currentPage === 'machines') renderMachineList();
-  else if (currentPage === 'expiring') renderExpiringReport();
-
-  setTimeout(() => {
-    if (btn) btn.classList.remove('spinning');
-    showToast('Dados atualizados!', 'success');
-  }, 500);
-}
-
 // ============================================
-// Segurança: PIN e Biometria
+// Segurança: PIN com Salt, Anti-Força Bruta e Biometria
 // ============================================
 let pinCode = '';
 let lockScreenMode = 'unlock';
@@ -1855,171 +893,11 @@ let tempSetupPin = '';
 let biometricsAvailable = false;
 
 async function hashPIN(pin) {
-  const msgUint8 = new TextEncoder().encode(pin);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function checkBiometricsSupport() {
-  if (window.PublicKeyCredential && 
-      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
-    try {
-      return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-    } catch (e) {
-      return false;
-    }
-  }
-  return false;
-}
-
-async function registerBiometrics() {
-  const challenge = new Uint8Array(32);
-  window.crypto.getRandomValues(challenge);
-  
-  const userId = new Uint8Array(16);
-  window.crypto.getRandomValues(userId);
-
-  const publicKey = {
-    challenge: challenge,
-    rp: {
-      name: "Área Segura",
-      id: window.location.hostname || "localhost"
-    },
-    user: {
-      id: userId,
-      name: "usuario@areasegura",
-      displayName: "Usuário Área Segura"
-    },
-    pubKeyCredParams: [
-      { type: "public-key", alg: -7 },
-      { type: "public-key", alg: -257 }
-    ],
-    authenticatorSelection: {
-      authenticatorAttachment: "platform",
-      userVerification: "required"
-    },
-    timeout: 60000
-  };
-
-  try {
-    const credential = await navigator.credentials.create({ publicKey });
-    if (credential) {
-      const credentialId = btoa(String.fromCharCode.apply(null, new Uint8Array(credential.rawId)));
-      localStorage.setItem('security_bio_cred_id', credentialId);
-      return true;
-    }
-  } catch (e) {
-    console.error("Biometria recusada ou erro:", e);
-    throw e;
-  }
-  return false;
-}
-
-async function authenticateBiometrics() {
-  const credId = localStorage.getItem('security_bio_cred_id');
-  if (!credId) return false;
-
-  const challenge = new Uint8Array(32);
-  window.crypto.getRandomValues(challenge);
-
-  const rawId = new Uint8Array(
-    atob(credId).split("").map(c => c.charCodeAt(0))
-  );
-
-  const publicKey = {
-    challenge: challenge,
-    allowCredentials: [{
-      id: rawId,
-      type: 'public-key'
-    }],
-    userVerification: "required",
-    rpId: window.location.hostname || "localhost",
-    timeout: 60000
-  };
-
-  try {
-    const assertion = await navigator.credentials.get({ publicKey });
-    return !!assertion;
-  } catch (e) {
-    console.error("Erro na autenticação biométrica:", e);
-    return false;
-  }
-}
-
-function pressPinNum(num) {
-  if (pinCode.length >= 6) return;
-  pinCode += num;
-  updatePinDots();
-  if (pinCode.length === 6) {
-    setTimeout(handlePinComplete, 200);
-  }
-}
-
-function deletePinDigit() {
-  if (pinCode.length === 0) return;
-  pinCode = pinCode.slice(0, -1);
-  updatePinDots();
-}
-
-function updatePinDots() {
-  const dots = document.querySelectorAll('#pin-dots .dot');
-  dots.forEach((dot, idx) => {
-    dot.className = 'dot';
-    if (idx < pinCode.length) {
-      dot.classList.add('filled');
-    }
-  });
-}
-
-async function handlePinComplete() {
-  const currentPin = pinCode;
-  pinCode = ''; 
-  
-  if (lockScreenMode === 'unlock') {
-    const hash = await hashPIN(currentPin);
-    const savedHash = localStorage.getItem('security_pin_hash');
-    if (hash === savedHash) {
-      unlockApp();
-    } else {
-      shakePinDots();
-      showToast('PIN incorreto!', 'error');
-      updatePinDots();
-    }
-  } else if (lockScreenMode === 'setup') {
-    tempSetupPin = currentPin;
-    lockScreenMode = 'confirm';
-    document.getElementById('lock-message').textContent = 'Confirme seu PIN de 6 dígitos';
-    updatePinDots();
-  } else if (lockScreenMode === 'confirm') {
-    if (currentPin === tempSetupPin) {
-      const hash = await hashPIN(currentPin);
-      localStorage.setItem('security_pin_hash', hash);
-      localStorage.setItem('security_pin_enabled', 'true');
-      
-      showToast('PIN configurado com sucesso!', 'success');
-      renderSettings();
-      hideLockScreen();
-    } else {
-      shakePinDots();
-      showToast('Os PINs não coincidem! Tente novamente.', 'error');
-      lockScreenMode = 'setup';
-      document.getElementById('lock-message').textContent = 'Defina um PIN de 6 dígitos';
-      tempSetupPin = '';
-      updatePinDots();
-    }
-  }
-}
-
-function shakePinDots() {
-  const pinDotsContainer = document.getElementById('pin-dots');
-  const dots = document.querySelectorAll('#pin-dots .dot');
-  dots.forEach(d => d.classList.add('error'));
-  pinDotsContainer.classList.add('shake-animation');
-  setTimeout(() => {
-    pinDotsContainer.classList.remove('shake-animation');
-    dots.forEach(d => d.classList.remove('error'));
-  }, 400);
+  const saltedMsg = new TextEncoder().encode(pin + PIN_SALT);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', saltedMsg);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function showLockScreen(mode = 'unlock') {
@@ -2028,87 +906,224 @@ function showLockScreen(mode = 'unlock') {
   updatePinDots();
   
   const lockEl = document.getElementById('lock-screen');
-  lockEl.classList.add('active');
-  
   const msgEl = document.getElementById('lock-message');
-  const bioBtn = document.getElementById('btn-biometric-auth');
   
-  if (mode === 'unlock') {
-    msgEl.textContent = 'Digite o PIN para desbloquear';
-    const isBioEnabled = localStorage.getItem('security_bio_enabled') === 'true';
-    if (isBioEnabled && localStorage.getItem('security_bio_cred_id')) {
-      bioBtn.style.visibility = 'visible';
-      setTimeout(triggerBiometricAuth, 300);
+  if (Date.now() < pinLockoutUntil) {
+    startLockoutCountdown();
+  } else {
+    if (mode === 'setup') {
+      if (msgEl) msgEl.textContent = 'Crie seu novo PIN de 6 dígitos';
+    } else if (mode === 'confirm') {
+      if (msgEl) msgEl.textContent = 'Confirme o novo PIN de 6 dígitos';
     } else {
-      bioBtn.style.visibility = 'hidden';
+      if (msgEl) msgEl.textContent = 'Digite seu PIN de 6 dígitos';
+      if (localStorage.getItem('security_bio_enabled') === 'true' && biometricsAvailable) {
+        setTimeout(triggerBiometricAuth, 400);
+      }
     }
-  } else if (mode === 'setup') {
-    msgEl.textContent = 'Defina um PIN de 6 dígitos';
-    bioBtn.style.visibility = 'hidden';
   }
+
+  if (lockEl) lockEl.classList.add('active');
 }
 
 function hideLockScreen() {
   const lockEl = document.getElementById('lock-screen');
-  lockEl.classList.remove('active');
+  if (lockEl) lockEl.classList.remove('active');
+  pinCode = '';
 }
 
-function unlockApp() {
-  hideLockScreen();
-  showToast('Desbloqueado com sucesso!', 'success');
-  navigateTo('dashboard');
+function pressPinNum(num) {
+  if (Date.now() < pinLockoutUntil) return;
+  if (pinCode.length < 6) {
+    pinCode += num;
+    updatePinDots();
+    if (pinCode.length === 6) {
+      setTimeout(processPinEntry, 150);
+    }
+  }
+}
+
+function deletePinDigit() {
+  if (Date.now() < pinLockoutUntil) return;
+  if (pinCode.length > 0) {
+    pinCode = pinCode.slice(0, -1);
+    updatePinDots();
+  }
+}
+
+function updatePinDots(isError = false) {
+  const dots = document.querySelectorAll('.pin-dots .dot');
+  dots.forEach((dot, index) => {
+    if (isError) {
+      dot.className = 'dot error';
+    } else if (index < pinCode.length) {
+      dot.className = 'dot filled';
+    } else {
+      dot.className = 'dot';
+    }
+  });
+}
+
+async function processPinEntry() {
+  const entered = pinCode;
+  
+  if (lockScreenMode === 'unlock') {
+    const enteredHash = await hashPIN(entered);
+    const savedHash = localStorage.getItem('security_pin_hash');
+
+    if (savedHash && enteredHash === savedHash) {
+      failedPinAttempts = 0;
+      hideLockScreen();
+      showToast('Acesso liberado com sucesso!', 'success');
+    } else {
+      failedPinAttempts++;
+      triggerPinError();
+
+      if (failedPinAttempts >= 5) {
+        pinLockoutUntil = Date.now() + 60000;
+        startLockoutCountdown();
+      } else {
+        const left = 5 - failedPinAttempts;
+        document.getElementById('lock-message').textContent = `PIN incorreto! (${left} tentativa(s) restante(s))`;
+      }
+    }
+  } else if (lockScreenMode === 'setup') {
+    tempSetupPin = entered;
+    pinCode = '';
+    updatePinDots();
+    lockScreenMode = 'confirm';
+    document.getElementById('lock-message').textContent = 'Confirme o PIN novamente';
+  } else if (lockScreenMode === 'confirm') {
+    if (entered === tempSetupPin) {
+      const hash = await hashPIN(entered);
+      localStorage.setItem('security_pin_hash', hash);
+      localStorage.setItem('security_pin_enabled', 'true');
+      hideLockScreen();
+      showToast('PIN de segurança configurado com sucesso!', 'success');
+      renderSettings();
+    } else {
+      triggerPinError();
+      document.getElementById('lock-message').textContent = 'Os PINs não coincidem. Tente novamente.';
+      setTimeout(() => showLockScreen('setup'), 1000);
+    }
+  }
+}
+
+function triggerPinError() {
+  updatePinDots(true);
+  const container = document.querySelector('.lock-container');
+  if (container) {
+    container.classList.add('shake-animation');
+    setTimeout(() => container.classList.remove('shake-animation'), 400);
+  }
+  setTimeout(() => {
+    pinCode = '';
+    updatePinDots();
+  }, 600);
+}
+
+function startLockoutCountdown() {
+  if (pinLockoutTimer) clearInterval(pinLockoutTimer);
+  const msgEl = document.getElementById('lock-message');
+
+  pinLockoutTimer = setInterval(() => {
+    const remainingSec = Math.ceil((pinLockoutUntil - Date.now()) / 1000);
+    if (remainingSec <= 0) {
+      clearInterval(pinLockoutTimer);
+      failedPinAttempts = 0;
+      if (msgEl) msgEl.textContent = 'Digite seu PIN de 6 dígitos';
+    } else {
+      if (msgEl) msgEl.textContent = `Acesso bloqueado por tentativas incorretas (${remainingSec}s)`;
+    }
+  }, 1000);
+}
+
+// Biometria (WebAuthn Platform)
+async function checkBiometricsSupport() {
+  if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+    try {
+      return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    } catch (e) { return false; }
+  }
+  return false;
 }
 
 async function triggerBiometricAuth() {
-  const success = await authenticateBiometrics();
-  if (success) {
-    unlockApp();
-  } else {
-    showToast('Falha na biometria. Use o PIN.', 'error');
+  if (localStorage.getItem('security_bio_enabled') !== 'true') return;
+  try {
+    const credId = localStorage.getItem('security_bio_cred_id');
+    if (!credId) return;
+
+    const challenge = new Uint8Array(32);
+    window.crypto.getRandomValues(challenge);
+
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: challenge,
+        timeout: 60000,
+        userVerification: 'required'
+      }
+    });
+
+    if (assertion) {
+      failedPinAttempts = 0;
+      hideLockScreen();
+      showToast('Desbloqueado por Biometria!', 'success');
+    }
+  } catch (e) {
+    console.log('Biometria cancelada ou não reconhecida.');
   }
 }
 
-// Configurações e Switches
-async function togglePinSecurity(checked) {
-  if (checked) {
+async function togglePinSecurity(enabled) {
+  if (enabled) {
     showLockScreen('setup');
   } else {
-    const confirmDisable = confirm("Deseja desativar o bloqueio por PIN? A biometria também será desativada.");
-    if (confirmDisable) {
+    if (confirm('Deseja realmente remover o bloqueio por PIN?')) {
       localStorage.removeItem('security_pin_hash');
       localStorage.removeItem('security_pin_enabled');
       localStorage.removeItem('security_bio_enabled');
-      localStorage.removeItem('security_bio_cred_id');
-      showToast('Bloqueio desativado.', 'success');
+      showToast('Bloqueio por PIN desativado.', 'info');
       renderSettings();
     } else {
-      document.getElementById('setting-pin-enabled').checked = true;
+      renderSettings();
     }
   }
 }
 
-async function toggleBioSecurity(checked) {
-  if (checked) {
+async function toggleBioSecurity(enabled) {
+  if (enabled) {
     try {
-      showToast('Autentique-se para ativar a biometria...', 'info');
-      const registered = await registerBiometrics();
-      if (registered) {
+      const challenge = new Uint8Array(32);
+      window.crypto.getRandomValues(challenge);
+      const userId = new Uint8Array(16);
+      window.crypto.getRandomValues(userId);
+
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge: challenge,
+          rp: { name: "Área Segura Pro", id: window.location.hostname || "localhost" },
+          user: { id: userId, name: "admin@areasegura", displayName: "Administrador" },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+          timeout: 60000
+        }
+      });
+
+      if (credential) {
+        const credentialId = btoa(String.fromCharCode.apply(null, new Uint8Array(credential.rawId)));
+        localStorage.setItem('security_bio_cred_id', credentialId);
         localStorage.setItem('security_bio_enabled', 'true');
-        showToast('Biometria ativada!', 'success');
-        renderSettings();
-      } else {
-        document.getElementById('setting-bio-enabled').checked = false;
+        showToast('Biometria ativada com sucesso!', 'success');
       }
     } catch (e) {
-      document.getElementById('setting-bio-enabled').checked = false;
-      showToast('Erro ao ativar biometria.', 'error');
+      showToast('Não foi possível ativar a biometria no dispositivo.', 'error');
     }
   } else {
     localStorage.removeItem('security_bio_enabled');
-    localStorage.removeItem('security_bio_cred_id');
-    showToast('Biometria desativada.', 'success');
-    renderSettings();
+    showToast('Biometria desativada.', 'info');
   }
+  renderSettings();
 }
 
 function startPinChange() {
@@ -2118,56 +1133,84 @@ function startPinChange() {
 function renderSettings() {
   const isPinEnabled = localStorage.getItem('security_pin_enabled') === 'true';
   const isBioEnabled = localStorage.getItem('security_bio_enabled') === 'true';
-  
+
   const pinToggle = document.getElementById('setting-pin-enabled');
   const bioToggle = document.getElementById('setting-bio-enabled');
-  
+
   if (pinToggle) pinToggle.checked = isPinEnabled;
   if (bioToggle) bioToggle.checked = isBioEnabled;
-  
+
   const changePinRow = document.getElementById('change-pin-row');
   const bioSettingsItem = document.getElementById('biometric-settings-item');
-  
+
   if (isPinEnabled) {
     if (changePinRow) changePinRow.style.display = 'block';
-    if (biometricsAvailable) {
-      if (bioSettingsItem) bioSettingsItem.style.display = 'flex';
-    }
+    if (biometricsAvailable && bioSettingsItem) bioSettingsItem.style.display = 'flex';
   } else {
     if (changePinRow) changePinRow.style.display = 'none';
     if (bioSettingsItem) bioSettingsItem.style.display = 'none';
   }
 }
 
-// Dynamic Version & Auto-Update Check
-let currentAppVersion = '1.4.0';
+// ============================================
+// Atualização de Versão e Limpeza de Cache Mobile
+// ============================================
+let currentAppVersion = '2.0.0';
 
 async function checkAppVersion() {
   try {
-    const res = await fetch(`./version.json?_t=${Date.now()}`);
+    const res = await fetch(`./version.json?_t=${Date.now()}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (data && data.version) {
         currentAppVersion = data.version;
         const versionEl = document.getElementById('app-version-display');
-        if (versionEl) versionEl.textContent = `v${data.version} PWA`;
+        if (versionEl) versionEl.textContent = `v${data.version} Pro Enterprise`;
 
         const savedVersion = localStorage.getItem('area_segura_app_version');
         if (savedVersion && savedVersion !== data.version) {
           localStorage.setItem('area_segura_app_version', data.version);
           if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(registrations => {
-              for (let reg of registrations) reg.update();
+              for (const reg of registrations) reg.update();
             });
           }
-          showToast(`Aplicativo atualizado para v${data.version}!`, 'success');
-          setTimeout(() => { window.location.reload(); }, 1000);
+          showToast(`Aplicativo atualizado para a v${data.version}!`, 'success');
+          setTimeout(() => { window.location.reload(); }, 1200);
         } else if (!savedVersion) {
           localStorage.setItem('area_segura_app_version', data.version);
         }
       }
     }
   } catch (e) {}
+}
+
+async function forceAppUpdate() {
+  if (confirm('Deseja forçar a atualização imediata e limpar todo o cache armazenado no celular?')) {
+    showToast('Limpando cache e atualizando versão...', 'info');
+    
+    // 1. Limpar caches do Service Worker
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+
+    // 2. Desregistrar Service Workers existentes
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        await reg.unregister();
+      }
+    }
+
+    // 3. Atualizar carimbo de versão local
+    localStorage.setItem('area_segura_app_version', '2.0.0');
+
+    // 4. Recarregar do servidor com carimbo fresco
+    setTimeout(() => {
+      window.location.href = window.location.origin + window.location.pathname + `?_update=${Date.now()}`;
+    }, 800);
+  }
 }
 
 // ============================================
@@ -2195,11 +1238,11 @@ function toggleAppTheme() {
   const isSlate = document.body.classList.contains('theme-slate');
   const nextTheme = isSlate ? 'cyber' : 'slate';
   applyTheme(nextTheme);
-  showToast(`Aparência: ${nextTheme === 'slate' ? 'Clean Slate' : 'Cyber Dark'}`, 'info');
+  showToast(`Aparência: ${nextTheme === 'slate' ? 'Clean Slate (Executivo)' : 'Cyber Dark'}`, 'info');
 }
 
 // ============================================
-// Funções do Portal do Cliente
+// Portal Exclusivo do Cliente (Isolamento de Segurança)
 // ============================================
 function checkPortalRoute() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -2212,42 +1255,23 @@ function checkPortalRoute() {
 }
 
 function initClientPortal(portalKey) {
-  // Buscar cliente por ID ou Usuário
   const client = DB.find(c => c.Id === portalKey || (c.PortalUser && c.PortalUser.toLowerCase() === portalKey.toLowerCase()));
   if (!client) {
-    showToast('Portal do cliente não encontrado.', 'error');
+    showToast('Portal do cliente não localizado.', 'error');
     navigateTo('dashboard');
     return;
   }
 
   if (client.PortalPass) {
-    showModal(`
-      <div class="modal-title">🔐 Acesso ao Portal</div>
-      <p style="color:var(--text-secondary); font-size:13px; text-align:center; margin-bottom:14px;">
-        Digite a senha de acesso para <strong>${escapeHtml(client.Instituicao || 'este laboratório')}</strong>:
-      </p>
-      <div class="detail-field">
-        <input type="password" class="detail-input" id="portal-auth-pass" placeholder="Digite a senha..." style="text-align:center; font-size:16px; letter-spacing:2px;" autocomplete="off">
-      </div>
-      <div class="modal-buttons">
-        <button class="modal-btn-confirm" onclick="confirmPortalAuth('${escapeHtml(client.Id)}')">ENTRAR NO PAINEL</button>
-      </div>
-    `);
+    const entered = prompt(`🔐 Digite a senha de acesso para o laboratório de "${client.Instituicao}":`);
+    if (entered === client.PortalPass) {
+      enterClientPortal(client);
+    } else {
+      alert('Senha incorreta!');
+      window.location.href = window.location.origin + window.location.pathname;
+    }
   } else {
     enterClientPortal(client);
-  }
-}
-
-function confirmPortalAuth(clientId) {
-  const client = DB.find(c => c.Id === clientId);
-  if (!client) return;
-  const pass = document.getElementById('portal-auth-pass')?.value || '';
-  if (pass === client.PortalPass) {
-    closeModal();
-    enterClientPortal(client);
-  } else {
-    showToast('Senha incorreta!', 'error');
-    document.getElementById('portal-auth-pass')?.focus();
   }
 }
 
@@ -2255,12 +1279,12 @@ function enterClientPortal(client) {
   isClientPortal = true;
   selectedClient = client;
 
-  // Atualizar Header
+  // Sanitização de memória: no modo cliente, apenas os dados deste cliente ficam no escopo
   const titleEl = document.querySelector('.header-title');
   if (titleEl) {
-    titleEl.innerHTML = `${escapeHtml(client.Instituicao || 'Portal')} <span class="client-portal-header-tag">Cliente</span>`;
+    titleEl.innerHTML = `${escapeHtml(client.Instituicao || 'Portal')} <span class="portal-badge">Cliente</span>`;
   }
-  
+
   const backBtn = document.querySelector('.header-back');
   if (backBtn) {
     backBtn.innerHTML = '🚪 Sair';
@@ -2268,7 +1292,6 @@ function enterClientPortal(client) {
     backBtn.onclick = exitClientPortal;
   }
 
-  // Ocultar navegação administrativa
   const bottomNav = document.querySelector('.bottom-nav');
   if (bottomNav) bottomNav.style.display = 'none';
 
@@ -2285,23 +1308,128 @@ function exitClientPortal() {
 }
 
 // ============================================
+// Importar / Exportar Banco
+// ============================================
+function exportDB() {
+  if (isClientPortal) return;
+  const jsonStr = JSON.stringify(DB, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `AreaSegura_Clientes_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Banco de clientes exportado!', 'success');
+}
+
+function importDB() {
+  if (isClientPortal) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const imported = JSON.parse(ev.target.result);
+        if (Array.isArray(imported)) {
+          DB = imported;
+          saveDB();
+          showToast(`${DB.length} cliente(s) importado(s) com sucesso!`, 'success');
+          renderDashboard();
+        } else {
+          showToast('Formato de arquivo inválido.', 'error');
+        }
+      } catch (err) {
+        showToast('Erro ao ler arquivo JSON.', 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// ============================================
+// Utilitários & Toast
+// ============================================
+function generateId() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+let toastTimer = null;
+function showToast(message, type = 'info') {
+  let toast = document.querySelector('.toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'toast';
+    document.body.appendChild(toast);
+  }
+
+  toast.className = `toast show ${type}`;
+  toast.textContent = message;
+
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.className = 'toast';
+  }, 3500);
+}
+
+async function refreshAll() {
+  const refreshBtn = document.querySelector('.header-refresh');
+  if (refreshBtn) refreshBtn.classList.add('spinning');
+
+  await fetchCloudStatuses();
+  await syncFromCloud();
+  await checkAppVersion();
+
+  setTimeout(() => {
+    if (refreshBtn) refreshBtn.classList.remove('spinning');
+    showToast('Dados sincronizados com a nuvem!', 'success');
+  }, 600);
+}
+
+// ============================================
 // Inicialização
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
-  // Inicializar Tema salvo
   initTheme();
+  loadDB();
 
-  // Service Worker
+  // Registrar Service Worker com tratamento de updates
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').then(reg => {
-      reg.update();
-    }).catch(() => {});
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showToast('Nova versão detectada! Atualizando...', 'info');
+              newWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        }
+      });
+    }).catch(err => {
+      console.warn('[SW] Erro ao registrar:', err);
+    });
   }
-
-  // Carregar DB
-  loadDB();
-  syncFromCloud();
-  checkAppVersion();
 
   // Checar suporte biometria
   checkBiometricsSupport().then(supported => {
@@ -2309,12 +1437,18 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSettings();
   });
 
-  // Splash Screen & Roteamento
+  // Checagem de versão
+  checkAppVersion();
+
+  // Sincronização em segundo plano
+  syncFromCloud();
+  fetchCloudStatuses();
+
+  // Splash Screen e Rota Inicial
   setTimeout(() => {
     document.getElementById('splash-screen').classList.add('hidden');
     document.getElementById('app').classList.add('visible');
-    
-    // Verificar se entrou por link de Portal do Cliente
+
     const isPortal = checkPortalRoute();
     if (!isPortal) {
       if (localStorage.getItem('security_pin_enabled') === 'true') {
@@ -2323,9 +1457,9 @@ document.addEventListener('DOMContentLoaded', () => {
         navigateTo('dashboard');
       }
     }
-  }, 2200);
+  }, 500);
 
-  // Navegação Bottom
+  // Navegação Inferior
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', () => {
       navigateTo(btn.dataset.page);
@@ -2335,26 +1469,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // Busca de clientes
   const searchInput = document.getElementById('search-clients');
   if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
+    searchInput.addEventListener('input', e => {
       renderClientList(e.target.value);
     });
   }
 
-  // Auto-refresh da nuvem a cada 60s e checagem de versão a cada 30s
+  // Sincronização periódica a cada 15 segundos
   setInterval(() => {
-    syncFromCloud();
-  }, 60000);
+    fetchCloudStatuses();
+    if (currentPage === 'machines') renderMachineList();
+  }, 15000);
 
+  // Checar novas versões a cada 60 segundos
   setInterval(() => {
     checkAppVersion();
-  }, 30000);
+  }, 60000);
 
-  // Atualizar ao voltar ao foco/visibilidade da aba no celular
+  // Recarregar status quando a aba voltar ao foco
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      syncFromCloud();
+      fetchCloudStatuses();
       checkAppVersion();
     }
   });
 });
-

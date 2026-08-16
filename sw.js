@@ -1,51 +1,80 @@
-const CACHE_NAME = 'gerenciador-v1.6.1';
+// ============================================
+// ÁREA SEGURA PRO - SERVICE WORKER
+// Versão: 2.0.0 Pro Enterprise
+// ============================================
+
+const CACHE_NAME = 'gerenciador-v2.0.0';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './manifest.json',
-  './version.json',
   './logo.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
   'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap'
 ];
 
-self.addEventListener('install', e => {
+self.addEventListener('install', event => {
   self.skipWaiting();
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll(ASSETS).catch(err => {
+        console.warn('[SW] Aviso ao cachear assets iniciais:', err);
+      });
+    })
   );
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
-      )
-    ).then(() => self.clients.claim())
-  );
-});
-
-// Network-First: Sempre busca a versão mais recente da rede quando online
-self.addEventListener('fetch', e => {
-  if (e.request.url.includes('supabase.co') || e.request.url.includes('api.ipify.org') || e.request.url.includes('ipinfo.io')) {
-    e.respondWith(
-      fetch(e.request).catch(() => caches.match(e.request))
-    );
-  } else {
-    e.respondWith(
-      fetch(e.request)
-        .then(response => {
-          if (response && response.status === 200 && response.type === 'basic') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys => {
+      return Promise.all(
+        keys.map(key => {
+          if (key !== CACHE_NAME) {
+            console.log('[SW] Removendo cache antigo:', key);
+            return caches.delete(key);
           }
-          return response;
         })
-        .catch(() => caches.match(e.request))
-    );
+      );
+    }).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
   }
+});
+
+// Network-First para conteúdo do app e bypass para APIs/version.json
+self.addEventListener('fetch', event => {
+  const url = event.request.url;
+
+  // 1. Bypass total de cache para APIs e checagem de versão
+  if (
+    url.includes('version.json') ||
+    url.includes('supabase.co') ||
+    url.includes('api.ipify.org') ||
+    url.includes('ipinfo.io')
+  ) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // 2. Estratégia Network-First para páginas e assets
+  event.respondWith(
+    fetch(event.request)
+      .then(response => {
+        if (response && response.status === 200 && response.type === 'basic') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
 });

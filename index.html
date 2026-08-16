@@ -3,40 +3,48 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="description" content="Gerenciador de Clientes e Licenças - Área Segura Pro">
-  <meta name="theme-color" content="#0F3460">
+  <meta name="description" content="Gerenciador de Clientes e Licenças - Área Segura Pro Enterprise">
+  <meta name="theme-color" content="#0F172A">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Gerenciador">
+  <meta name="apple-mobile-web-app-title" content="Área Segura">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.json">
-  <title>Gerenciador - Área Segura</title>
+  <title>Gerenciador - Área Segura Pro</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <!-- ============================================ -->
-  <!-- SPLASH SCREEN COM LOGO -->
+  <!-- SPLASH SCREEN -->
   <!-- ============================================ -->
   <div id="splash-screen">
-    <img src="logo.png" alt="Área Segura" class="splash-logo">
-    <div class="splash-title">GERENCIADOR</div>
-    <div class="splash-subtitle">ÁREA SEGURA PRO</div>
-    <div class="splash-loader"></div>
+    <div class="splash-content">
+      <img src="logo.png" alt="Área Segura" class="splash-logo">
+      <div class="splash-title">ÁREA SEGURA</div>
+      <div class="splash-subtitle">SISTEMA DE GESTÃO PROFISSIONAL</div>
+      <div class="splash-loader"></div>
+    </div>
   </div>
 
   <!-- ============================================ -->
-  <!-- APP PRINCIPAL -->
+  <!-- APLICAÇÃO PRINCIPAL -->
   <!-- ============================================ -->
   <div id="app">
 
-    <!-- Header -->
+    <!-- Header Corporativo -->
     <header class="app-header">
       <button class="header-back" onclick="goBack()" aria-label="Voltar">‹</button>
       <img src="logo.png" alt="Logo" class="header-logo">
-      <span class="header-title">GERENCIADOR</span>
-      <button class="header-refresh" onclick="refreshAll()" aria-label="Atualizar">⟳</button>
+      <div class="header-text-container">
+        <span class="header-title">GERENCIADOR PRO</span>
+        <span class="header-status-indicator">
+          <span class="status-dot-online"></span>
+          <span class="header-status-text" id="header-status-text">Online</span>
+        </span>
+      </div>
+      <button class="header-refresh" onclick="refreshAll()" title="Atualizar dados" aria-label="Atualizar">⟳</button>
     </header>
 
     <!-- Conteúdo Principal -->
@@ -48,8 +56,8 @@
         <!-- Alternador de Tema / Aparência -->
         <div class="theme-switch-card" onclick="toggleAppTheme()">
           <div class="theme-switch-title">
-            <span>🎨</span>
-            <span>Aparência:</span>
+            <span class="theme-icon">◐</span>
+            <span>Estilo Visual:</span>
           </div>
           <span class="theme-switch-tag" id="current-theme-tag">Cyber Dark</span>
         </div>
@@ -57,40 +65,69 @@
         <!-- Banner de Novas Máquinas Detectadas na Nuvem -->
         <div id="pending-machines-banner"></div>
 
-        <!-- Cards de Estatísticas -->
+        <!-- Cards de Métricas -->
         <div class="dashboard-cards">
           <div class="dash-card card-clients" onclick="navigateTo('clients')">
-            <div class="dash-card-icon">👥</div>
-            <div class="dash-card-label">Clientes</div>
+            <div class="dash-card-header">
+              <span class="dash-card-label">Clientes</span>
+              <span class="dash-card-icon">👥</span>
+            </div>
             <div class="dash-card-value" id="stat-clients">0</div>
+            <div class="dash-card-footer">Cadastrados no sistema</div>
           </div>
+
           <div class="dash-card card-machines" onclick="navigateTo('clients')">
-            <div class="dash-card-icon">🖥️</div>
-            <div class="dash-card-label">Máquinas</div>
+            <div class="dash-card-header">
+              <span class="dash-card-label">Máquinas</span>
+              <span class="dash-card-icon">🖥️</span>
+            </div>
             <div class="dash-card-value" id="stat-machines">0</div>
+            <div class="dash-card-footer">Terminais ativos</div>
           </div>
+
           <div class="dash-card card-expiring" onclick="navigateTo('expiring')">
-            <div class="dash-card-icon">⏳</div>
-            <div class="dash-card-label">Expirando</div>
+            <div class="dash-card-header">
+              <span class="dash-card-label">Expirando</span>
+              <span class="dash-card-icon">⏳</span>
+            </div>
             <div class="dash-card-value" id="stat-expiring">0</div>
+            <div class="dash-card-footer">≤ 30 dias de validade</div>
           </div>
+
           <div class="dash-card card-ok">
-            <div class="dash-card-icon">✅</div>
-            <div class="dash-card-label">Em Dia</div>
+            <div class="dash-card-header">
+              <span class="dash-card-label">Em Dia</span>
+              <span class="dash-card-icon">🛡️</span>
+            </div>
             <div class="dash-card-value" id="stat-ok">0</div>
+            <div class="dash-card-footer">Licenças regulares</div>
           </div>
         </div>
 
         <!-- Ações Rápidas -->
-        <div class="section-title">Ações Rápidas</div>
-        <div style="display: flex; gap: 10px; margin-bottom: 24px;">
-          <button class="btn-primary" style="flex:1; font-size: 13px;" onclick="showNewClientModal()">➕ Novo Cliente</button>
-          <button class="btn-secondary" style="flex:1; font-size: 13px;" onclick="importDB()">📥 Importar</button>
-          <button class="btn-secondary" style="flex:1; font-size: 13px;" onclick="exportDB()">📤 Exportar</button>
+        <div class="section-header">
+          <span class="section-title">Ações Rápidas</span>
+        </div>
+        <div class="quick-actions-grid">
+          <button class="btn-primary-action" onclick="showNewClientModal()">
+            <span class="action-icon">➕</span>
+            <span>Novo Cliente</span>
+          </button>
+          <button class="btn-secondary-action" onclick="importDB()">
+            <span class="action-icon">📥</span>
+            <span>Importar</span>
+          </button>
+          <button class="btn-secondary-action" onclick="exportDB()">
+            <span class="action-icon">📤</span>
+            <span>Exportar</span>
+          </button>
         </div>
 
         <!-- Clientes Recentes -->
-        <div class="section-title">Clientes Recentes</div>
+        <div class="section-header">
+          <span class="section-title">Clientes Recentes</span>
+          <span class="section-link" onclick="navigateTo('clients')">Ver Todos →</span>
+        </div>
         <div id="recent-clients" class="client-list"></div>
       </div>
 
@@ -98,12 +135,15 @@
       <div id="page-clients" class="page">
         <div class="search-bar">
           <span class="search-bar-icon">🔍</span>
-          <input type="text" id="search-clients" placeholder="Buscar cliente..." autocomplete="off">
+          <input type="text" id="search-clients" placeholder="Buscar por cliente, instituição ou contato..." autocomplete="off">
         </div>
 
         <div id="client-list-container" class="client-list"></div>
 
-        <button class="btn-new-client" onclick="showNewClientModal()">➕ NOVO CLIENTE</button>
+        <button class="btn-floating-action" onclick="showNewClientModal()">
+          <span>➕</span>
+          <span>NOVO CLIENTE</span>
+        </button>
       </div>
 
       <!-- ======== PÁGINA: DETALHES DO CLIENTE ======== -->
@@ -114,7 +154,7 @@
           <div class="accordion-header" id="client-accordion-btn" onclick="toggleClientAccordion()">
             <div class="accordion-header-left">
               <span class="accordion-icon">📋</span>
-              <span class="accordion-title">Dados do Cliente</span>
+              <span class="accordion-title">Dados da Instituição</span>
               <span class="portal-badge" id="portal-status-badge" style="display:none;">Portal Ativo</span>
             </div>
             <span class="accordion-chevron" id="client-accordion-chevron">▼</span>
@@ -122,106 +162,110 @@
 
           <div class="accordion-content" id="client-accordion-content" style="display: none;">
             <div class="detail-field">
-              <div class="detail-label">Instituição / Empresa</div>
+              <label class="detail-label" for="detail-instituicao">Instituição / Escola / Empresa</label>
               <input type="text" class="detail-input" id="detail-instituicao" placeholder="Nome da instituição">
             </div>
 
             <div class="detail-field">
-              <div class="detail-label">Localidade / Endereço</div>
+              <label class="detail-label" for="detail-localidade">Localidade / Cidade / Endereço</label>
               <input type="text" class="detail-input" id="detail-localidade" placeholder="Cidade, Bairro, Endereço">
             </div>
 
             <div class="detail-field">
-              <div class="detail-label">Responsável</div>
+              <label class="detail-label" for="detail-responsavel">Responsável pelo Laboratório</label>
               <input type="text" class="detail-input" id="detail-responsavel" placeholder="Nome do responsável">
             </div>
 
             <div class="detail-field">
-              <div class="detail-label">Contato (WhatsApp / Email)</div>
-              <input type="text" class="detail-input" id="detail-contato" placeholder="(DDD) 99999-9999 / email@exemplo.com">
+              <label class="detail-label" for="detail-contato">Contato Direto (WhatsApp / Telefone)</label>
+              <input type="text" class="detail-input" id="detail-contato" placeholder="(DDD) 99999-9999">
             </div>
 
             <!-- Caixa de Acesso ao Portal do Cliente -->
             <div class="client-portal-box">
               <div class="client-portal-box-title">
-                <span>🔐</span>
-                <span>Portal Exclusivo do Cliente</span>
+                <span class="portal-lock-icon">🔐</span>
+                <span>Portal Exclusivo do Cliente (Acesso Restrito)</span>
               </div>
               
               <div class="detail-field">
-                <div class="detail-label">Usuário / Login do Cliente</div>
+                <label class="detail-label" for="detail-portal-user">Usuário / Identificador do Cliente</label>
                 <input type="text" class="detail-input" id="detail-portal-user" placeholder="Ex: lab_escola (sem espaços)" autocomplete="off">
               </div>
 
               <div class="detail-field">
-                <div class="detail-label">Senha de Acesso do Cliente</div>
+                <label class="detail-label" for="detail-portal-pass">Senha de Acesso do Cliente</label>
                 <input type="text" class="detail-input" id="detail-portal-pass" placeholder="Ex: 123456" autocomplete="off">
               </div>
 
               <div class="detail-field">
-                <div class="detail-label">Link de Acesso Direto do Cliente</div>
-                <div style="display: flex; gap: 8px;">
-                  <input type="text" class="detail-input" id="detail-portal-link" readonly style="color: var(--accent-green); font-size: 11px; flex: 1;">
-                  <button class="btn-secondary" style="padding: 0 12px; font-size: 12px; white-space: nowrap;" onclick="copyClientPortalLink()">📋 Copiar</button>
+                <label class="detail-label" for="detail-portal-link">Link Direto de Acesso</label>
+                <div class="input-with-button">
+                  <input type="text" class="detail-input" id="detail-portal-link" readonly>
+                  <button class="btn-copy-link" onclick="copyClientPortalLink()">📋 Copiar</button>
                 </div>
               </div>
 
-              <button class="btn-secondary" style="width: 100%; margin-top: 8px; background: #25D366; color: white; border: none; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;" onclick="shareClientPortalWhatsApp()">
+              <button class="btn-whatsapp-share" onclick="shareClientPortalWhatsApp()">
                 <span>📱</span>
-                <span>Enviar Link e Senha via WhatsApp</span>
+                <span>Enviar Acesso via WhatsApp</span>
               </button>
             </div>
 
-            <button class="btn-primary" style="margin-top: 16px;" onclick="saveClientDetails()">💾 SALVAR DADOS DO CLIENTE</button>
-            <button class="btn-danger" style="margin-top: 10px; background:#E94560; color:white; width:100%; padding:12px; border:none; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;" onclick="showDeleteClientModal()">🗑️ EXCLUIR CLIENTE</button>
+            <div class="action-buttons-group">
+              <button class="btn-primary" onclick="saveClientDetails()">💾 SALVAR ALTERAÇÕES</button>
+              <button class="btn-danger-outline" onclick="showDeleteClientModal()">🗑️ Excluir Cliente</button>
+            </div>
           </div>
         </div>
 
         <!-- Seção de Ambientes / Laboratórios -->
         <div class="detail-section">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <div class="detail-section-title" style="margin-bottom: 0;">🏢 Ambientes / Laboratórios</div>
-            <button class="btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="showAddAmbienteModal()">➕ Novo Lab</button>
+          <div class="section-header-inline">
+            <div class="detail-section-title">🏢 Ambientes & Laboratórios</div>
+            <button class="btn-small-action" onclick="showAddAmbienteModal()">➕ Novo Lab</button>
           </div>
           <div id="detail-ambientes-container"></div>
         </div>
 
-        <!-- Máquinas -->
+        <!-- Máquinas Cadastradas -->
         <div class="detail-section">
           <div class="detail-section-title">🖥️ Máquinas Cadastradas</div>
-          <div id="detail-maq-count" style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">0 máquina(s)</div>
-          <button class="btn-primary" onclick="navigateTo('machines', selectedClient)">VER / GERENCIAR MÁQUINAS →</button>
+          <div id="detail-maq-count" class="detail-counter-text">0 máquina(s) vinculada(s)</div>
+          <button class="btn-primary" onclick="navigateTo('machines', selectedClient)">GERENCIAR MÁQUINAS →</button>
         </div>
       </div>
 
       <!-- ======== PÁGINA: MÁQUINAS DO CLIENTE ======== -->
       <div id="page-machines" class="page">
 
-        <!-- Barra de Ações -->
-        <div class="action-bar">
-          <button class="action-btn freeze" onclick="freezeSelected()">🧊 Congelar</button>
-          <button class="action-btn thaw" onclick="thawSelected()">🔥 Descongelar</button>
-          <button class="action-btn renew" onclick="showRenewModal()">🔑 Renovar</button>
-          <button class="action-btn revoke" onclick="revokeSelected()">🚫 Revogar</button>
-          <button class="action-btn update" onclick="showUpdateModal()">🔄 Atualizar</button>
-          <button class="action-btn uninstall" onclick="uninstallSelected()" style="background:#7F1D1D; color:#FCA5A5; border:1px solid #EF4444;">⚡ Desinstalar PC</button>
-          <button class="action-btn delete-maq" onclick="deleteSelectedMachines()" style="background:#3B1828; color:#FCA5A5; border:1px solid #E94560;">🗑️ Excluir</button>
-          <button class="action-btn add" onclick="showAddMachineModal()">➕ Nova</button>
+        <!-- Barra de Ações em Lote -->
+        <div class="action-bar-container">
+          <div class="action-bar">
+            <button class="action-btn freeze" onclick="freezeSelected()">🧊 Congelar</button>
+            <button class="action-btn thaw" onclick="thawSelected()">🔥 Descongelar</button>
+            <button class="action-btn renew" onclick="showRenewModal()">🔑 Renovar</button>
+            <button class="action-btn revoke" onclick="revokeSelected()">🚫 Revogar</button>
+            <button class="action-btn update" onclick="showUpdateModal()">🔄 Atualizar</button>
+            <button class="action-btn uninstall" onclick="uninstallSelected()">⚡ Desinstalar</button>
+            <button class="action-btn delete-maq" onclick="deleteSelectedMachines()">🗑️ Excluir</button>
+            <button class="action-btn add" onclick="showAddMachineModal()">➕ Nova</button>
+          </div>
         </div>
 
         <!-- Filtro e Busca -->
         <div class="filter-bar">
           <select class="filter-select" id="filter-ambiente" onchange="renderMachineList()">
-            <option value="">Todos</option>
+            <option value="">Todos os Ambientes</option>
           </select>
-          <input type="text" id="search-machine" class="detail-input" placeholder="🔍 Buscar HWID..." style="flex: 1;" oninput="renderMachineList()">
+          <input type="text" id="search-machine" class="detail-input search-machine-input" placeholder="🔍 Buscar HWID..." oninput="renderMachineList()">
         </div>
 
-        <!-- Selecionar Todas -->
+        <!-- Seleção Global -->
         <div class="select-all-row">
-          <label>
-            <input type="checkbox" onchange="toggleSelectAll(this.checked)">
-            Selecionar Todas
+          <label class="checkbox-label">
+            <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)">
+            <span>Selecionar Todas as Máquinas</span>
           </label>
           <span class="select-count" id="select-count">0 selecionada(s)</span>
         </div>
@@ -232,21 +276,21 @@
 
       <!-- ======== PÁGINA: RELATÓRIO EXPIRANDO ======== -->
       <div id="page-expiring" class="page">
-        <div class="section-title" style="margin-bottom: 16px;">⚠️ Máquinas Expirando (≤ 30 dias)</div>
+        <div class="section-title">⚠️ Licenças Próximas do Vencimento (≤ 30 dias)</div>
         <div id="expiring-list" class="expiring-list"></div>
       </div>
 
-      <!-- ======== PÁGINA: CONFIGURAÇÕES ======== -->
+      <!-- ======== PÁGINA: CONFIGURAÇÕES E SEGURANÇA ======== -->
       <div id="page-settings" class="page">
-        <div class="section-title" style="margin-bottom: 16px;">⚙️ Ajustes e Segurança</div>
+        <div class="section-title">⚙️ Ajustes e Segurança do Sistema</div>
         
         <div class="settings-card">
-          <div class="settings-group-title">🔒 Segurança do Aplicativo</div>
+          <div class="settings-group-title">🔒 Segurança de Acesso</div>
           
           <div class="settings-item">
             <div class="settings-info">
-              <span class="settings-label">Bloqueio por PIN</span>
-              <span class="settings-sub">Exigir código de 6 dígitos ao abrir o app</span>
+              <span class="settings-label">Bloqueio por PIN de Segurança</span>
+              <span class="settings-sub">Exigir código PIN de 6 dígitos com proteção anti-força bruta</span>
             </div>
             <label class="switch-toggle">
               <input type="checkbox" id="setting-pin-enabled" onchange="togglePinSecurity(this.checked)">
@@ -256,8 +300,8 @@
 
           <div class="settings-item" id="biometric-settings-item" style="display: none;">
             <div class="settings-info">
-              <span class="settings-label">Biometria / Reconhecimento Facial</span>
-              <span class="settings-sub">Desbloquear usando Face ID, Touch ID ou Impressão Digital</span>
+              <span class="settings-label">Autenticação Biométrica</span>
+              <span class="settings-sub">Desbloqueio rápido via Face ID, Touch ID ou Impressão Digital</span>
             </div>
             <label class="switch-toggle">
               <input type="checkbox" id="setting-bio-enabled" onchange="toggleBioSecurity(this.checked)">
@@ -266,21 +310,34 @@
           </div>
           
           <div class="settings-action-row" id="change-pin-row" style="display: none;">
-            <button class="btn-secondary" style="width: 100%; margin-top: 10px;" onclick="startPinChange()">✏️ Alterar PIN de Acesso</button>
+            <button class="btn-secondary" onclick="startPinChange()">✏️ Redefinir PIN de Acesso</button>
           </div>
         </div>
         
-        <div class="settings-card" style="margin-top: 20px;">
-          <div class="settings-group-title">📡 Informações do Servidor</div>
+        <!-- Sincronização & Informações do Servidor -->
+        <div class="settings-card">
+          <div class="settings-group-title">📡 Nuvem & Atualização do Sistema</div>
           <div class="settings-static-info">
             <div class="info-row">
-              <span class="info-label">Supabase URL:</span>
-              <span class="info-value" style="font-size: 11px; word-break: break-all;">https://inndgkbugwegrkbvogew.supabase.co</span>
+              <span class="info-label">Servidor Supabase:</span>
+              <span class="info-value">Conectado (REST API v1)</span>
             </div>
-            <div class="info-row" style="margin-top: 8px;">
-              <span class="info-label">Versão do App:</span>
-              <span class="info-value" id="app-version-display">v1.4.0 PWA</span>
+            <div class="info-row">
+              <span class="info-label">Versão do Gerenciador:</span>
+              <span class="info-value-highlight" id="app-version-display">v2.0.0 Pro Enterprise</span>
             </div>
+            <div class="info-row">
+              <span class="info-label">Criptografia de Licenças:</span>
+              <span class="info-value">HMAC-SHA256 Ativa</span>
+            </div>
+          </div>
+
+          <div class="settings-update-box">
+            <button class="btn-force-update" onclick="forceAppUpdate()">
+              <span>🔄</span>
+              <span>Forçar Atualização / Limpar Cache do Celular</span>
+            </button>
+            <p class="update-subtext">Limpa todos os dados antigos armazenados pelo navegador móvel e baixa a versão mais recente em tempo real.</p>
           </div>
         </div>
       </div>
@@ -310,15 +367,15 @@
   </div>
 
   <!-- ============================================ -->
-  <!-- TELA DE BLOQUEIO (SECURITY LOCK SCREEN) -->
+  <!-- TELA DE BLOQUEIO (PIN / BIOMETRIA) -->
   <!-- ============================================ -->
   <div id="lock-screen" class="lock-screen-overlay">
     <div class="lock-container">
       <img src="logo.png" alt="Logo" class="lock-logo">
-      <h2 class="lock-title">Área Segura</h2>
-      <p class="lock-subtitle" id="lock-message">Carregando...</p>
+      <h2 class="lock-title">Área Segura Pro</h2>
+      <p class="lock-subtitle" id="lock-message">Digite seu PIN de segurança</p>
       
-      <!-- Dots indicator for PIN -->
+      <!-- Indicadores de Dígitos -->
       <div class="pin-dots" id="pin-dots">
         <span class="dot"></span>
         <span class="dot"></span>
@@ -328,7 +385,7 @@
         <span class="dot"></span>
       </div>
 
-      <!-- PIN Keypad -->
+      <!-- Teclado Numérico -->
       <div class="pin-pad">
         <button class="pin-btn" onclick="pressPinNum('1')">1</button>
         <button class="pin-btn" onclick="pressPinNum('2')">2</button>
@@ -347,7 +404,7 @@
       </div>
       
       <div class="lock-footer" id="lock-footer-info">
-        Aplicativo Protegido por Biometria Local
+        Protegido por Criptografia Local SHA-256
       </div>
     </div>
   </div>
