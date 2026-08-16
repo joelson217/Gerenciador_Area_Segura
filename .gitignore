@@ -1,0 +1,4 @@
+# Este repositorio e publicado inteiro como site estatico (Cloudflare).
+# O codigo da Edge Function fica FORA daqui de proposito (veja
+# ../supabase-deploy) para nunca virar um arquivo publico por engano.
+supabase/
