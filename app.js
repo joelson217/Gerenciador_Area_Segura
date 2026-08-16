@@ -1091,15 +1091,10 @@ async function togglePinSecurity(enabled) {
   if (enabled) {
     showLockScreen('setup');
   } else {
-    if (confirm('Deseja realmente remover o bloqueio por PIN?')) {
-      localStorage.removeItem('security_pin_hash');
-      localStorage.removeItem('security_pin_enabled');
-      localStorage.removeItem('security_bio_enabled');
-      showToast('Bloqueio por PIN desativado.', 'info');
-      renderSettings();
-    } else {
-      renderSettings();
-    }
+    // O bloqueio por PIN agora é obrigatório (protege o acesso ao painel
+    // inteiro) — não dá mais pra desativar por aqui, só trocar o código.
+    showToast('O bloqueio por PIN é obrigatório neste painel. Use "Redefinir PIN" para trocar o código.', 'warning');
+    renderSettings();
   }
 }
 
@@ -1150,7 +1145,10 @@ function renderSettings() {
   const pinToggle = document.getElementById('setting-pin-enabled');
   const bioToggle = document.getElementById('setting-bio-enabled');
 
-  if (pinToggle) pinToggle.checked = isPinEnabled;
+  if (pinToggle) {
+    pinToggle.checked = isPinEnabled;
+    pinToggle.disabled = isPinEnabled; // obrigatório: só pode ligar, nunca desligar
+  }
   if (bioToggle) bioToggle.checked = isBioEnabled;
 
   const changePinRow = document.getElementById('change-pin-row');
@@ -1168,7 +1166,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.2.0';
+let currentAppVersion = '2.2.1';
 
 async function checkAppVersion() {
   try {
@@ -1394,10 +1392,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('splash-screen').classList.add('hidden');
     document.getElementById('app').classList.add('visible');
 
+    // O bloqueio por PIN/biometria não é mais opcional: sem ele, bastava
+    // abrir a URL base do Gerenciador (ex: apagando a parte "?u=..." do
+    // link de um cliente) pra cair direto no painel admin sem senha
+    // nenhuma. Agora, se ainda não existe PIN configurado neste aparelho,
+    // o próprio app exige a criação de um antes de mostrar qualquer coisa.
     if (localStorage.getItem('security_pin_enabled') === 'true') {
       showLockScreen('unlock');
     } else {
-      navigateTo('dashboard');
+      showLockScreen('setup');
     }
   }, 500);
 
