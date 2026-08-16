@@ -373,7 +373,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Versão do Gerenciador:</span>
-              <span class="info-value-highlight" id="app-version-display">v2.2.1 Pro Enterprise</span>
+              <span class="info-value-highlight" id="app-version-display">v2.3.0 Pro Enterprise</span>
             </div>
             <div class="info-row">
               <span class="info-label">Criptografia de Licenças:</span>
@@ -444,6 +444,27 @@
         <button class="modal-btn-cancel" onclick="closeNewClientModal()">Cancelar</button>
         <button class="modal-btn-confirm" onclick="confirmNewClient()">Criar Cliente</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- ATIVAÇÃO DO APARELHO (SÓ O ADMINISTRADOR PASSA DAQUI) -->
+  <!-- Ninguém consegue criar um PIN/"conta" neste painel sem antes provar -->
+  <!-- que tem o Token de Administrador, que só existe com o dono do sistema. -->
+  <!-- ============================================ -->
+  <div id="activation-screen" class="lock-screen-overlay">
+    <div class="lock-container">
+      <img src="logo.png" alt="Logo" class="lock-logo">
+      <h2 class="lock-title">Acesso Restrito</h2>
+      <p class="lock-subtitle">Este Gerenciador é de uso exclusivo do administrador. Digite o Token de Administrador para ativar este aparelho.</p>
+
+      <div class="detail-field" style="width:100%; text-align:left; margin-bottom:20px;">
+        <label class="detail-label" for="activation-token-input">Token de Administrador</label>
+        <input type="password" class="detail-input" id="activation-token-input" autocomplete="off" onkeydown="if(event.key==='Enter') submitActivation()">
+      </div>
+
+      <button class="btn-primary" style="width:100%;" onclick="submitActivation()">Ativar Aparelho</button>
+      <p id="activation-error" style="color:var(--accent-red); font-size:12px; margin-top:12px; min-height:16px;"></p>
     </div>
   </div>
 

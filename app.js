@@ -32,6 +32,35 @@ function saveAdminTokenFromSettings() {
   showToast('Token de administrador salvo neste aparelho.', 'success');
 }
 
+// Portão de ativação do aparelho: só quem digita o Token de Administrador
+// correto consegue avançar. Sem isso, qualquer pessoa que abrisse a URL
+// base do Gerenciador (ex: apagando a parte "?u=..." do link de um
+// cliente) conseguia criar seu próprio PIN e "entrar" no painel.
+async function submitActivation() {
+  const input = document.getElementById('activation-token-input');
+  const errorEl = document.getElementById('activation-error');
+  const token = input?.value.trim() || '';
+
+  if (!token) {
+    if (errorEl) errorEl.textContent = 'Digite o token de administrador.';
+    return;
+  }
+
+  const result = await callLicenseApi('admin-verify', { admin_token: token });
+  if (result.error || !result.ok) {
+    if (errorEl) errorEl.textContent = 'Token incorreto. Este painel é de uso exclusivo do administrador.';
+    if (input) { input.value = ''; input.focus(); }
+    return;
+  }
+
+  localStorage.setItem('area_segura_admin_token', token);
+  document.getElementById('activation-screen')?.classList.remove('active');
+  renderAdminTokenStatus();
+  initialSyncPromise = syncFromCloud();
+  fetchCloudStatuses();
+  showLockScreen('setup');
+}
+
 function renderAdminTokenStatus() {
   const statusEl = document.getElementById('admin-token-status');
   if (!statusEl) return;
@@ -1166,7 +1195,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.2.1';
+let currentAppVersion = '2.3.0';
 
 async function checkAppVersion() {
   try {
@@ -1383,21 +1412,29 @@ document.addEventListener('DOMContentLoaded', () => {
   // Checagem de versão
   checkAppVersion();
 
-  // Sincronização em segundo plano
-  initialSyncPromise = syncFromCloud();
-  fetchCloudStatuses();
+  // Sincronização em segundo plano — só se este aparelho já foi ativado
+  // com o Token de Administrador. Antes disso não faz sentido tentar (nem
+  // mostrar o aviso de "configure o token"): quem ainda não passou pelo
+  // portão de ativação vai ver essa tela primeiro, não o dashboard.
+  if (localStorage.getItem('area_segura_admin_token')) {
+    initialSyncPromise = syncFromCloud();
+    fetchCloudStatuses();
+  }
 
   // Splash Screen e Rota Inicial
   setTimeout(() => {
     document.getElementById('splash-screen').classList.add('hidden');
     document.getElementById('app').classList.add('visible');
 
-    // O bloqueio por PIN/biometria não é mais opcional: sem ele, bastava
-    // abrir a URL base do Gerenciador (ex: apagando a parte "?u=..." do
-    // link de um cliente) pra cair direto no painel admin sem senha
-    // nenhuma. Agora, se ainda não existe PIN configurado neste aparelho,
-    // o próprio app exige a criação de um antes de mostrar qualquer coisa.
-    if (localStorage.getItem('security_pin_enabled') === 'true') {
+    // Ninguém entra neste painel sem antes provar que tem o Token de
+    // Administrador (portão de ativação) — só depois disso o PIN local
+    // (obrigatório, uma vez por aparelho) passa a proteger os acessos
+    // seguintes. Isso fecha o buraco de qualquer pessoa "criar uma conta"
+    // só de abrir a URL base do Gerenciador.
+    if (!localStorage.getItem('area_segura_admin_token')) {
+      document.getElementById('activation-screen')?.classList.add('active');
+      setTimeout(() => document.getElementById('activation-token-input')?.focus(), 300);
+    } else if (localStorage.getItem('security_pin_enabled') === 'true') {
       showLockScreen('unlock');
     } else {
       showLockScreen('setup');
@@ -1419,8 +1456,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Sincronização periódica a cada 15 segundos
+  // Sincronização periódica a cada 15 segundos (só depois de ativado)
   setInterval(() => {
+    if (!localStorage.getItem('area_segura_admin_token')) return;
     fetchCloudStatuses();
     if (currentPage === 'machines') renderMachineList();
   }, 15000);
@@ -1433,7 +1471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Recarregar status quando a aba voltar ao foco
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      fetchCloudStatuses();
+      if (localStorage.getItem('area_segura_admin_token')) fetchCloudStatuses();
       checkAppVersion();
     }
   });

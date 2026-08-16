@@ -205,6 +205,15 @@ async function handleCommand(body: any) {
   return json({ ok: true });
 }
 
+// Ativação de um novo aparelho no Gerenciador admin: só confirma se o
+// token bate, sem devolver nenhum dado. É o portão que impede qualquer
+// pessoa de criar seu próprio PIN e "entrar" no painel — só quem tem o
+// Token de Administrador passa daqui.
+async function handleAdminVerify(body: any) {
+  if (!requireAdmin(body)) return json({ error: "não autorizado" }, 401);
+  return json({ ok: true });
+}
+
 // Admin sincronizando o dashboard: status de todas as licenças + backup do banco de clientes.
 async function handleAdminSync(body: any) {
   if (!requireAdmin(body)) return json({ error: "não autorizado" }, 401);
@@ -337,6 +346,8 @@ Deno.serve(async (req) => {
       return handleCheckin(body);
     case "sync-status":
       return handleSyncStatus(body);
+    case "admin-verify":
+      return handleAdminVerify(body);
     case "activate":
       return handleActivate(body);
     case "verify-key":
