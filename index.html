@@ -373,7 +373,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Versão do Gerenciador:</span>
-              <span class="info-value-highlight" id="app-version-display">v2.4.0 Pro Enterprise</span>
+              <span class="info-value-highlight" id="app-version-display">v2.5.0 Pro Enterprise</span>
             </div>
             <div class="info-row">
               <span class="info-label">Criptografia de Licenças:</span>
@@ -443,6 +443,39 @@
       <div class="modal-buttons">
         <button class="modal-btn-cancel" onclick="closeNewClientModal()">Cancelar</button>
         <button class="modal-btn-confirm" onclick="confirmNewClient()">Criar Cliente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- MODAL: CONFIRMAÇÃO GENÉRICA (substitui confirm() nativo) -->
+  <!-- ============================================ -->
+  <div id="modal-confirm" class="modal-overlay" style="display:none">
+    <div class="modal-content">
+      <div class="modal-handle"></div>
+      <div class="modal-title" id="confirm-modal-title">Confirmar</div>
+      <p id="confirm-modal-message" style="color:var(--text-secondary); font-size:14px; line-height:1.5; margin:10px 0 20px; white-space:pre-line;"></p>
+      <div class="modal-buttons">
+        <button class="modal-btn-cancel" id="confirm-modal-cancel">Cancelar</button>
+        <button class="modal-btn-confirm" id="confirm-modal-ok">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- MODAL: ENTRADA DE TEXTO GENÉRICA (substitui prompt() nativo) -->
+  <!-- ============================================ -->
+  <div id="modal-prompt" class="modal-overlay" style="display:none">
+    <div class="modal-content">
+      <div class="modal-handle"></div>
+      <div class="modal-title" id="prompt-modal-title">Digite</div>
+      <p id="prompt-modal-message" style="color:var(--text-secondary); font-size:13px; margin-bottom:12px;"></p>
+      <div class="detail-field">
+        <input type="text" class="detail-input" id="prompt-modal-input" autocomplete="off">
+      </div>
+      <div class="modal-buttons">
+        <button class="modal-btn-cancel" id="prompt-modal-cancel">Cancelar</button>
+        <button class="modal-btn-confirm" id="prompt-modal-ok">OK</button>
       </div>
     </div>
   </div>

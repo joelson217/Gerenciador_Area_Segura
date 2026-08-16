@@ -355,15 +355,26 @@ function renderPendingMachinesBanner() {
     return;
   }
 
+  // Cada máquina pendente já aparece aqui com um botão pra copiar a chave
+  // na hora — não depende de achar em qual cliente ela foi anexada
+  // automaticamente (o app anexa máquinas novas ao cliente mais recente
+  // por padrão, o que nem sempre é o cliente certo).
+  const rows = pendingHwIds.map(hwId => `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-top:1px solid rgba(245, 158, 11, 0.25);">
+      <code style="font-size:12px; color:var(--text-primary);">${escapeHtml(hwId)}</code>
+      <button class="btn-small-action" style="background:var(--accent-orange); color:#0F172A; font-weight:700; flex-shrink:0;" onclick="copyMachineKey('${escapeHtml(hwId)}', '1970-01-01')">
+        <svg class="icon"><use href="#icon-copy"/></svg> Copiar Chave
+      </button>
+    </div>
+  `).join('');
+
   banner.innerHTML = `
     <div class="pending-alert-card" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
         <span style="font-weight:700; color:var(--accent-orange); font-size:13px; display:inline-flex; align-items:center; gap:6px;"><svg class="icon"><use href="#icon-alert-triangle"/></svg> ${pendingHwIds.length} Novo(s) Computador(es) Detectado(s)</span>
       </div>
-      <p style="font-size:12px; color:var(--text-secondary); margin-bottom:10px;">Há terminais recém-instalados aguardando ativação de licença na nuvem.</p>
-      <button class="btn-small-action" style="background:var(--accent-orange); color:#0F172A; font-weight:700; width:100%; padding:8px;" onclick="navigateTo('clients')">
-        Ver Clientes e Ativar Terminais
-      </button>
+      <p style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">Copie a chave e cole na tela de ativação do computador do cliente:</p>
+      ${rows}
     </div>
   `;
 }
@@ -538,6 +549,9 @@ function renderAmbientes() {
     tag.innerHTML = `
       <span><svg class="icon"><use href="#icon-building"/></svg> ${escapeHtml(amb)}</span>
       <strong style="color:var(--accent-blue);">(${count} PCs)</strong>
+      <button class="btn-small-action" style="padding:2px 6px; background:transparent; border:none; color:var(--accent-red);" onclick="deleteAmbiente('${escapeHtml(amb).replace(/'/g, "\\'")}')" title="Excluir ambiente" aria-label="Excluir ambiente">
+        <svg class="icon" style="width:0.9em; height:0.9em;"><use href="#icon-trash"/></svg>
+      </button>
     `;
     grid.appendChild(tag);
   });
@@ -545,17 +559,32 @@ function renderAmbientes() {
   container.appendChild(grid);
 }
 
-function showAddAmbienteModal() {
-  const name = prompt('Digite o nome do novo Ambiente / Laboratório (ex: Lab 02, Biblioteca, Sala 10):');
-  if (name && name.trim()) {
+async function showAddAmbienteModal() {
+  const name = await showPromptModal('Digite o nome do novo Ambiente / Laboratório (ex: Lab 02, Biblioteca, Sala 10):', '', 'Novo Ambiente');
+  if (name) {
     if (!selectedClient.Ambientes) selectedClient.Ambientes = ['Lab Principal'];
-    const clean = name.trim();
-    if (!selectedClient.Ambientes.includes(clean)) {
-      selectedClient.Ambientes.push(clean);
+    if (!selectedClient.Ambientes.includes(name)) {
+      selectedClient.Ambientes.push(name);
       saveDB();
       renderAmbientes();
-      showToast(`Ambiente "${clean}" adicionado!`, 'success');
+      showToast(`Ambiente "${name}" adicionado!`, 'success');
     }
+  }
+}
+
+async function deleteAmbiente(amb) {
+  if (!selectedClient) return;
+  const count = (selectedClient.Maquinas || []).filter(m => m.Laboratorio === amb).length;
+  if (count > 0) {
+    showToast(`Não é possível excluir: ${count} máquina(s) ainda estão em "${amb}". Mova-as para outro ambiente primeiro.`, 'warning');
+    return;
+  }
+  if (await showConfirmModal(`Excluir o ambiente "${amb}"?`, 'Excluir Ambiente')) {
+    selectedClient.Ambientes = (selectedClient.Ambientes || []).filter(a => a !== amb);
+    if (selectedClient.Ambientes.length === 0) selectedClient.Ambientes = ['Lab Principal'];
+    saveDB();
+    renderAmbientes();
+    showToast(`Ambiente "${amb}" excluído!`, 'success');
   }
 }
 
@@ -666,12 +695,16 @@ function toggleSelectAll(checked) {
 }
 
 async function copyMachineKey(hwId, expDate) {
-  const exp = expDate || '2027-08-15';
+  // Máquinas pendentes chegam com DataExpiracao "1970-01-01" (marcador de
+  // "ainda não ativada") - gerar a chave com essa data cria uma chave já
+  // expirada, que o cliente não consegue usar. Nesse caso usa 1 ano a partir
+  // de hoje como padrão.
+  const exp = (expDate && expDate !== '1970-01-01') ? expDate : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const key = await getActivationKey(hwId, exp);
   navigator.clipboard.writeText(key).then(() => {
     showToast(`Chave copiada: ${key}`, 'success');
   }).catch(() => {
-    prompt('Copie a chave de ativação:', key);
+    showPromptModal('Copie a chave de ativação abaixo:', key, 'Chave de Ativação');
   });
 }
 
@@ -682,7 +715,7 @@ async function freezeSelected() {
     showToast('Selecione pelo menos uma máquina.', 'warning');
     return;
   }
-  if (confirm(`Deseja CONGELAR e proteger as ${selected.length} máquina(s) selecionada(s)? O sistema será bloqueado contra alterações.`)) {
+  if (await showConfirmModal(`Deseja CONGELAR e proteger as ${selected.length} máquina(s) selecionada(s)? O sistema será bloqueado contra alterações.`, 'Congelar Máquinas')) {
     for (const hwId of selected) {
       await sendSupabaseCommand(hwId, 'FREEZE|MANTER');
     }
@@ -697,7 +730,7 @@ async function thawSelected() {
     showToast('Selecione pelo menos uma máquina.', 'warning');
     return;
   }
-  if (confirm(`Deseja DESCONGELAR as ${selected.length} máquina(s) selecionada(s)? As alterações serão mantidas.`)) {
+  if (await showConfirmModal(`Deseja DESCONGELAR as ${selected.length} máquina(s) selecionada(s)? As alterações serão mantidas.`, 'Descongelar Máquinas')) {
     for (const hwId of selected) {
       await sendSupabaseCommand(hwId, 'THAW');
     }
@@ -712,7 +745,7 @@ async function revokeSelected() {
     showToast('Selecione pelo menos uma máquina.', 'warning');
     return;
   }
-  if (confirm(`⚠️ ATENÇÃO: Deseja REVOGAR a licença das ${selected.length} máquina(s)? Elas perderão a ativação imediatamente.`)) {
+  if (await showConfirmModal(`ATENÇÃO: Deseja REVOGAR a licença das ${selected.length} máquina(s)? Elas perderão a ativação imediatamente.`, 'Revogar Licença')) {
     for (const hwId of selected) {
       await sendSupabaseCommand(hwId, 'REVOKE');
     }
@@ -727,7 +760,7 @@ async function uninstallSelected() {
     showToast('Selecione pelo menos uma máquina.', 'warning');
     return;
   }
-  if (confirm(`🚨 PERIGO: Deseja DESINSTALAR COMPLETAMENTE o Área Segura nas ${selected.length} máquina(s)? Esta ação é irreversível e reiniciará os computadores.`)) {
+  if (await showConfirmModal(`PERIGO: Deseja DESINSTALAR COMPLETAMENTE o Área Segura nas ${selected.length} máquina(s)? Esta ação é irreversível e reiniciará os computadores.`, 'Desinstalar')) {
     for (const hwId of selected) {
       await sendSupabaseCommand(hwId, 'UNINSTALL');
     }
@@ -736,16 +769,16 @@ async function uninstallSelected() {
   }
 }
 
-function showRenewModal() {
+async function showRenewModal() {
   const selected = getSelectedHwIds();
   if (selected.length === 0) {
     showToast('Selecione pelo menos uma máquina para renovar.', 'warning');
     return;
   }
 
-  const expDate = prompt('Digite a nova data de validade da licença (AAAA-MM-DD):', '2027-08-15');
-  if (expDate && /^\d{4}-\d{2}-\d{2}$/.test(expDate.trim())) {
-    const cleanDate = expDate.trim();
+  const expDate = await showPromptModal('Digite a nova data de validade da licença (AAAA-MM-DD):', '2027-08-15', 'Renovar Licença');
+  if (expDate && /^\d{4}-\d{2}-\d{2}$/.test(expDate)) {
+    const cleanDate = expDate;
     selected.forEach(async hwId => {
       const chave = await getActivationKey(hwId, cleanDate); // já persiste a licença no servidor
 
@@ -765,7 +798,7 @@ function showRenewModal() {
   }
 }
 
-function showUpdateModal() {
+async function showUpdateModal() {
   const selected = getSelectedHwIds();
   if (selected.length === 0) {
     showToast('Selecione pelo menos uma máquina para atualizar o executável.', 'warning');
@@ -773,9 +806,9 @@ function showUpdateModal() {
   }
 
   const defaultUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura.exe';
-  const url = prompt('URL do novo executável AreaSegura.exe:', defaultUrl);
-  if (url && url.trim().startsWith('http')) {
-    const cleanUrl = url.trim();
+  const url = await showPromptModal('URL do novo executável AreaSegura.exe:', defaultUrl, 'Atualizar Executável');
+  if (url && url.startsWith('http')) {
+    const cleanUrl = url;
     selected.forEach(async hwId => {
       await sendSupabaseCommand(hwId, `UPDATE|${cleanUrl}`);
     });
@@ -783,12 +816,12 @@ function showUpdateModal() {
   }
 }
 
-function showAddMachineModal() {
-  const hwId = prompt('Digite o Hardware ID da nova máquina (ex: AS-A1B2C3D4):');
-  if (hwId && hwId.trim()) {
-    const cleanHw = hwId.trim().toUpperCase();
-    const amb = prompt('Ambiente / Laboratório:', (selectedClient.Ambientes && selectedClient.Ambientes[0]) || 'Lab Principal') || 'Lab Principal';
-    const exp = prompt('Data de Expiração (AAAA-MM-DD):', '2027-08-15') || '2027-08-15';
+async function showAddMachineModal() {
+  const hwId = await showPromptModal('Digite o Hardware ID da nova máquina (ex: AS-A1B2C3D4):', '', 'Nova Máquina');
+  if (hwId) {
+    const cleanHw = hwId.toUpperCase();
+    const amb = (await showPromptModal('Ambiente / Laboratório:', (selectedClient.Ambientes && selectedClient.Ambientes[0]) || 'Lab Principal', 'Nova Máquina')) || 'Lab Principal';
+    const exp = (await showPromptModal('Data de Expiração (AAAA-MM-DD):', '2027-08-15', 'Nova Máquina')) || '2027-08-15';
 
     if (!selectedClient.Maquinas) selectedClient.Maquinas = [];
     selectedClient.Maquinas.push({
@@ -807,13 +840,13 @@ function showAddMachineModal() {
   }
 }
 
-function deleteSelectedMachines() {
+async function deleteSelectedMachines() {
   const selected = getSelectedHwIds();
   if (selected.length === 0) {
     showToast('Selecione pelo menos uma máquina para excluir do cadastro.', 'warning');
     return;
   }
-  if (confirm(`Excluir as ${selected.length} máquina(s) do cadastro deste cliente?`)) {
+  if (await showConfirmModal(`Excluir as ${selected.length} máquina(s) do cadastro deste cliente?`, 'Excluir Máquinas')) {
     selectedClient.Maquinas = (selectedClient.Maquinas || []).filter(m => !selected.includes(m.HardwareID));
     saveDB();
     renderMachineList();
@@ -821,14 +854,61 @@ function deleteSelectedMachines() {
   }
 }
 
-function showDeleteClientModal() {
+async function showDeleteClientModal() {
   if (!selectedClient) return;
-  if (confirm(`⚠️ Tem certeza de que deseja EXCLUIR o cliente "${selectedClient.Instituicao}" e todas as suas máquinas?`)) {
+  if (await showConfirmModal(`Tem certeza de que deseja EXCLUIR o cliente "${selectedClient.Instituicao}" e todas as suas máquinas?`, 'Excluir Cliente')) {
     DB = DB.filter(c => c.Id !== selectedClient.Id);
     saveDB();
     showToast('Cliente excluído com sucesso!', 'success');
     navigateTo('clients');
   }
+}
+
+// ============================================
+// Confirmação e Prompt customizados (substituem confirm()/prompt() nativos,
+// que abrem no estilo padrão do navegador e destoam do resto do app)
+// ============================================
+function showConfirmModal(message, title = 'Confirmar') {
+  return new Promise(resolve => {
+    const modal = document.getElementById('modal-confirm');
+    document.getElementById('confirm-modal-title').textContent = title;
+    document.getElementById('confirm-modal-message').textContent = message;
+    const btnOk = document.getElementById('confirm-modal-ok');
+    const btnCancel = document.getElementById('confirm-modal-cancel');
+    const cleanup = (result) => {
+      modal.style.display = 'none';
+      btnOk.onclick = null;
+      btnCancel.onclick = null;
+      resolve(result);
+    };
+    btnOk.onclick = () => cleanup(true);
+    btnCancel.onclick = () => cleanup(false);
+    modal.style.display = 'flex';
+  });
+}
+
+function showPromptModal(message, defaultValue = '', title = 'Digite') {
+  return new Promise(resolve => {
+    const modal = document.getElementById('modal-prompt');
+    document.getElementById('prompt-modal-title').textContent = title;
+    document.getElementById('prompt-modal-message').textContent = message;
+    const input = document.getElementById('prompt-modal-input');
+    input.value = defaultValue;
+    const btnOk = document.getElementById('prompt-modal-ok');
+    const btnCancel = document.getElementById('prompt-modal-cancel');
+    const cleanup = (result) => {
+      modal.style.display = 'none';
+      btnOk.onclick = null;
+      btnCancel.onclick = null;
+      input.onkeydown = null;
+      resolve(result);
+    };
+    btnOk.onclick = () => cleanup(input.value.trim());
+    btnCancel.onclick = () => cleanup(null);
+    input.onkeydown = (e) => { if (e.key === 'Enter') cleanup(input.value.trim()); };
+    modal.style.display = 'flex';
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+  });
 }
 
 function showNewClientModal() {
@@ -1196,7 +1276,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.4.0';
+let currentAppVersion = '2.5.0';
 
 async function checkAppVersion() {
   try {
@@ -1227,7 +1307,7 @@ async function checkAppVersion() {
 }
 
 async function forceAppUpdate() {
-  if (confirm('Deseja forçar a atualização imediata e limpar todo o cache armazenado no celular?')) {
+  if (await showConfirmModal('Deseja forçar a atualização imediata e limpar todo o cache armazenado no celular?', 'Forçar Atualização')) {
     showToast('Limpando cache e atualizando versão...', 'info');
     
     // 1. Limpar caches do Service Worker
