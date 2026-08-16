@@ -108,6 +108,11 @@ function loadDB() {
     try { DB = JSON.parse(saved); } catch (e) { DB = []; }
   }
   if (!Array.isArray(DB) || DB.length === 0) {
+    // Só um placeholder local pra tela não ficar vazia enquanto o
+    // syncFromCloud() ainda não respondeu. NUNCA salva na nuvem aqui —
+    // fazer isso sobrescreveria os clientes reais com esse placeholder
+    // sempre que o app abrisse com o armazenamento local vazio (foi
+    // exatamente isso que apagou o Teste2 e o Casa).
     DB = [
       {
         "Id": "83089473-cad9-48aa-af20-c06fa6b0b693",
@@ -121,14 +126,23 @@ function loadDB() {
         "CorAlerta": "White"
       }
     ];
-    saveDB();
+    localStorage.setItem('area_segura_db', JSON.stringify(DB));
   }
 }
+
+// Enquanto a primeira sincronização com a nuvem não termina, o DB local pode
+// estar incompleto (placeholder ou versão antiga) — esperar evita que um
+// save nesse meio-tempo sobrescreva os clientes reais na nuvem.
+let initialSyncPromise = null;
 
 async function saveDB() {
   if (isClientPortal) {
     // Modo portal do cliente: salva apenas no estado local sem sobrescrever backup master
     return;
+  }
+  if (initialSyncPromise) {
+    await initialSyncPromise;
+    initialSyncPromise = null;
   }
   localStorage.setItem('area_segura_db', JSON.stringify(DB));
 
@@ -1163,7 +1177,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.1.5';
+let currentAppVersion = '2.1.6';
 
 async function checkAppVersion() {
   try {
@@ -1514,7 +1528,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sincronização em segundo plano (só fora do portal — portal usa portal-login)
   if (!isClientPortal) {
-    syncFromCloud();
+    initialSyncPromise = syncFromCloud();
     fetchCloudStatuses();
   }
 
