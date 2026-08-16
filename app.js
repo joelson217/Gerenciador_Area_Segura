@@ -14,7 +14,7 @@ const PIN_SALT = '@AreaSegura_Salt_2026!';
 function getAdminToken() {
   let token = localStorage.getItem('area_segura_admin_token');
   if (!token) {
-    token = (prompt('Token de Administrador (definido ao publicar a Edge Function):') || '').trim();
+    token = (prompt('Token de Administrador — cole aqui (evite digitar, para não errar):') || '').trim();
     if (token) localStorage.setItem('area_segura_admin_token', token);
   }
   return token;
@@ -27,7 +27,14 @@ async function callLicenseApi(action, payload = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, ...payload })
     });
-    return await res.json();
+    const data = await res.json();
+    // Token de admin salvo estava errado/expirado: limpa e avisa em UM lugar
+    // só, pra não ficar preso silenciosamente em loop de erro em toda chamada.
+    if (data && data.error === 'não autorizado' && payload.admin_token) {
+      localStorage.removeItem('area_segura_admin_token');
+      showToast('Token de administrador incorreto. Toque em qualquer ação de novo para digitar o certo.', 'error');
+    }
+    return data;
   } catch (e) {
     return { error: 'offline' };
   }
@@ -109,10 +116,7 @@ async function saveDB() {
   const result = await callLicenseApi('admin-save-db', { db: DB, admin_token: getAdminToken() });
   if (result.error) {
     console.error('Erro ao salvar backup na nuvem:', result.error);
-    if (result.error === 'não autorizado') {
-      localStorage.removeItem('area_segura_admin_token');
-      showToast('Token de administrador incorreto. Tente salvar de novo.', 'error');
-    } else {
+    if (result.error !== 'não autorizado') {
       showToast('Não foi possível sincronizar com a nuvem (offline?).', 'warning');
     }
   }
@@ -1138,7 +1142,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.1.2';
+let currentAppVersion = '2.1.3';
 
 async function checkAppVersion() {
   try {
