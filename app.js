@@ -19,6 +19,7 @@ let DB = [];
 let selectedClient = null;
 let cloudStatuses = {};
 let currentPage = 'dashboard';
+let isClientPortal = false;
 
 // ============================================
 // HMAC-SHA256 para Gerar Chaves de Ativação
@@ -229,6 +230,10 @@ function navigateTo(page, data) {
 }
 
 function goBack() {
+  if (isClientPortal) {
+    exitClientPortal();
+    return;
+  }
   if (currentPage === 'machines') {
     navigateTo('detail');
   } else if (currentPage === 'detail') {
@@ -416,32 +421,221 @@ function renderClientList(filter = '') {
 }
 
 // ============================================
-// Detalhes do Cliente
+// Detalhes do Cliente, Accordion & Portal
 // ============================================
+function toggleClientAccordion() {
+  const content = document.getElementById('client-accordion-content');
+  const btn = document.getElementById('client-accordion-btn');
+  if (!content) return;
+  
+  const isHidden = content.style.display === 'none' || !content.style.display;
+  content.style.display = isHidden ? 'block' : 'none';
+  if (btn) btn.classList.toggle('active', isHidden);
+}
+
 function renderClientDetail() {
   if (!selectedClient) return;
 
+  // Preencher campos de dados
   document.getElementById('detail-instituicao').value = selectedClient.Instituicao || '';
   document.getElementById('detail-localidade').value = selectedClient.Localidade || '';
   document.getElementById('detail-responsavel').value = selectedClient.Responsavel || '';
   document.getElementById('detail-contato').value = selectedClient.Contato || '';
 
+  // Credenciais do Portal do Cliente
+  document.getElementById('detail-portal-user').value = selectedClient.PortalUser || '';
+  document.getElementById('detail-portal-pass').value = selectedClient.PortalPass || '';
+
+  // Gerar Link do Portal
+  const baseUrl = window.location.origin + window.location.pathname;
+  const portalUrl = `${baseUrl}?portal=${encodeURIComponent(selectedClient.Id)}`;
+  const linkInput = document.getElementById('detail-portal-link');
+  if (linkInput) linkInput.value = portalUrl;
+
+  // Badge de Portal Ativo
+  const portalBadge = document.getElementById('portal-status-badge');
+  if (portalBadge) {
+    portalBadge.style.display = (selectedClient.PortalUser || selectedClient.PortalPass) ? 'inline-flex' : 'none';
+  }
+
+  // Contagem de máquinas
   const maqCount = (selectedClient.Maquinas || []).length;
   document.getElementById('detail-maq-count').textContent = `${maqCount} máquina(s) cadastrada(s)`;
 
-  const ambientes = getClientAmbientes(selectedClient);
-  document.getElementById('detail-ambientes').value = ambientes.join(', ');
+  // Renderizar lista de Ambientes / Laboratórios
+  renderAmbientesList();
 }
 
 function getClientAmbientes(client) {
-  let ambs = client.Ambientes ? [...client.Ambientes] : [];
-  if (client.Maquinas) {
-    client.Maquinas.forEach(m => {
-      if (m.Laboratorio && !ambs.includes(m.Laboratorio)) ambs.push(m.Laboratorio);
+  if (!client) return [{ Nome: 'Lab Principal', Capacidade: 20 }];
+  let ambs = [];
+  
+  if (Array.isArray(client.Ambientes)) {
+    client.Ambientes.forEach(a => {
+      if (typeof a === 'string') {
+        ambs.push({ Nome: a, Capacidade: 20 });
+      } else if (a && a.Nome) {
+        ambs.push({ Nome: a.Nome, Capacidade: parseInt(a.Capacidade) || 20 });
+      }
     });
   }
-  if (ambs.length === 0) ambs = ['Lab Principal'];
+
+  // Descobrir ambientes extras presentes nas máquinas
+  if (Array.isArray(client.Maquinas)) {
+    client.Maquinas.forEach(m => {
+      if (m.Laboratorio && !ambs.some(a => a.Nome === m.Laboratorio)) {
+        ambs.push({ Nome: m.Laboratorio, Capacidade: 20 });
+      }
+    });
+  }
+
+  if (ambs.length === 0) ambs = [{ Nome: 'Lab Principal', Capacidade: 20 }];
   return ambs;
+}
+
+function renderAmbientesList() {
+  const container = document.getElementById('detail-ambientes-container');
+  if (!container || !selectedClient) return;
+
+  const ambs = getClientAmbientes(selectedClient);
+  const machines = selectedClient.Maquinas || [];
+
+  if (ambs.length === 0) {
+    container.innerHTML = `<div style="color:var(--text-muted); font-size:12px;">Nenhum laboratório cadastrado.</div>`;
+    return;
+  }
+
+  let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+  ambs.forEach((amb, idx) => {
+    const maqInLab = machines.filter(m => m.Laboratorio === amb.Nome).length;
+    html += `
+      <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+        <div>
+          <span style="font-weight:700; color:white; font-size:14px;">🖥️ ${escapeHtml(amb.Nome)}</span>
+          <span class="lab-capacity-tag">${maqInLab} / ${amb.Capacidade} Máquinas</span>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button class="btn-secondary" style="padding:4px 8px; font-size:11px;" onclick="editAmbienteModal(${idx})">✏️ Editar</button>
+          ${ambs.length > 1 ? `<button class="btn-secondary" style="padding:4px 8px; font-size:11px; color:#E94560;" onclick="deleteAmbiente(${idx})">🗑️</button>` : ''}
+        </div>
+      </div>`;
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+function showAddAmbienteModal() {
+  showModal(`
+    <div class="modal-title">➕ Novo Laboratório / Ambiente</div>
+    <div class="detail-field">
+      <div class="detail-label">Nome do Laboratório / Ambiente</div>
+      <input type="text" class="detail-input" id="modal-amb-nome" placeholder="Ex: Laboratório 01">
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Quantidade de Máquinas Previstas</div>
+      <input type="number" class="detail-input" id="modal-amb-capacidade" value="20" min="1" max="500">
+    </div>
+    <div class="modal-buttons">
+      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="modal-btn-confirm" onclick="saveNewAmbiente()">Adicionar</button>
+    </div>
+  `);
+}
+
+function saveNewAmbiente() {
+  if (!selectedClient) return;
+  const nome = document.getElementById('modal-amb-nome').value.trim();
+  const cap = parseInt(document.getElementById('modal-amb-capacidade').value) || 20;
+
+  if (!nome) { showToast('Digite o nome do laboratório', 'error'); return; }
+
+  let ambs = getClientAmbientes(selectedClient);
+  if (ambs.some(a => a.Nome.toLowerCase() === nome.toLowerCase())) {
+    showToast('Já existe um laboratório com esse nome', 'warning');
+    return;
+  }
+
+  ambs.push({ Nome: nome, Capacidade: cap });
+  selectedClient.Ambientes = ambs;
+  saveDB();
+  closeModal();
+  renderAmbientesList();
+  showToast(`Laboratório "${nome}" adicionado com sucesso!`, 'success');
+}
+
+function editAmbienteModal(idx) {
+  if (!selectedClient) return;
+  const ambs = getClientAmbientes(selectedClient);
+  const amb = ambs[idx];
+  if (!amb) return;
+
+  showModal(`
+    <div class="modal-title">✏️ Editar Laboratório</div>
+    <div class="detail-field">
+      <div class="detail-label">Nome do Laboratório</div>
+      <input type="text" class="detail-input" id="modal-edit-amb-nome" value="${escapeHtml(amb.Nome)}">
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Quantidade de Máquinas Previstas</div>
+      <input type="number" class="detail-input" id="modal-edit-amb-capacidade" value="${amb.Capacidade || 20}" min="1" max="500">
+    </div>
+    <div class="modal-buttons">
+      <button class="modal-btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="modal-btn-confirm" onclick="saveEditAmbiente(${idx})">Salvar</button>
+    </div>
+  `);
+}
+
+function saveEditAmbiente(idx) {
+  if (!selectedClient) return;
+  const ambs = getClientAmbientes(selectedClient);
+  const oldAmb = ambs[idx];
+  if (!oldAmb) return;
+
+  const newNome = document.getElementById('modal-edit-amb-nome').value.trim();
+  const newCap = parseInt(document.getElementById('modal-edit-amb-capacidade').value) || 20;
+
+  if (!newNome) { showToast('Nome não pode ser vazio', 'error'); return; }
+
+  // Se alterou o nome, atualiza também as máquinas que estavam nesse laboratório
+  if (oldAmb.Nome !== newNome && Array.isArray(selectedClient.Maquinas)) {
+    selectedClient.Maquinas.forEach(m => {
+      if (m.Laboratorio === oldAmb.Nome) {
+        m.Laboratorio = newNome;
+      }
+    });
+  }
+
+  ambs[idx] = { Nome: newNome, Capacidade: newCap };
+  selectedClient.Ambientes = ambs;
+  saveDB();
+  closeModal();
+  renderAmbientesList();
+  showToast('Laboratório atualizado com sucesso!', 'success');
+}
+
+function deleteAmbiente(idx) {
+  if (!selectedClient) return;
+  const ambs = getClientAmbientes(selectedClient);
+  const amb = ambs[idx];
+  if (!amb) return;
+
+  if (confirm(`Deseja remover o laboratório "${amb.Nome}"? As máquinas vinculadas serão movidas para o primeiro laboratório.`)) {
+    ambs.splice(idx, 1);
+    const defaultLab = ambs[0]?.Nome || 'Lab Principal';
+
+    if (Array.isArray(selectedClient.Maquinas)) {
+      selectedClient.Maquinas.forEach(m => {
+        if (m.Laboratorio === amb.Nome) m.Laboratorio = defaultLab;
+      });
+    }
+
+    selectedClient.Ambientes = ambs;
+    saveDB();
+    renderAmbientesList();
+    showToast('Laboratório removido!', 'success');
+  }
 }
 
 function saveClientDetails() {
@@ -456,14 +650,39 @@ function saveClientDetails() {
   selectedClient.Contato = document.getElementById('detail-contato').value.trim();
   selectedClient.NomeExibicao = inst;
 
-  const ambsInput = document.getElementById('detail-ambientes').value;
-  selectedClient.Ambientes = ambsInput.split(',').map(a => a.trim()).filter(a => a.length > 0);
-  if (selectedClient.Ambientes.length === 0) {
-    selectedClient.Ambientes = ['Lab Principal'];
+  // Salvar credenciais do portal do cliente
+  selectedClient.PortalUser = document.getElementById('detail-portal-user').value.trim();
+  selectedClient.PortalPass = document.getElementById('detail-portal-pass').value.trim();
+
+  // Preservar os ambientes estruturados
+  if (!selectedClient.Ambientes || selectedClient.Ambientes.length === 0) {
+    selectedClient.Ambientes = [{ Nome: 'Lab Principal', Capacidade: 20 }];
   }
 
   saveDB();
-  showToast('Dados atualizados com sucesso!', 'success');
+  renderClientDetail();
+  showToast('Dados e credenciais do cliente salvos!', 'success');
+}
+
+function copyClientPortalLink() {
+  const linkInput = document.getElementById('detail-portal-link');
+  if (!linkInput || !linkInput.value) return;
+
+  copyToClipboard(linkInput.value);
+  showToast('Link do portal copiado!', 'success');
+}
+
+function shareClientPortalWhatsApp() {
+  if (!selectedClient) return;
+  const inst = selectedClient.Instituicao || 'Cliente';
+  const link = document.getElementById('detail-portal-link')?.value || '';
+  const user = selectedClient.PortalUser || 'Seu Usuário';
+  const pass = selectedClient.PortalPass || 'Sua Senha';
+
+  const msg = `Olá! Segue o link de acesso ao seu painel de controle do Área Segura:\n\n🏢 *${inst}*\n🔗 *Link:* ${link}\n👤 *Usuário:* ${user}\n🔑 *Senha:* ${pass}\n\nVocê pode abrir no navegador ou instalar como app no seu celular para congelar e descongelar seus computadores quando quiser.`;
+  
+  const encoded = encodeURIComponent(msg);
+  window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
 }
 
 // --- Excluir Cliente ---
@@ -532,13 +751,23 @@ async function renderMachines() {
   const container = document.getElementById('machines-list');
   const machines = selectedClient.Maquinas || [];
 
-  // Filtro
+  // Filtro de Ambientes
   const filterAmb = document.getElementById('filter-ambiente');
   if (filterAmb) {
     const ambs = getClientAmbientes(selectedClient);
     filterAmb.innerHTML = '<option value="">Todos os Ambientes</option>';
     ambs.forEach(a => {
-      filterAmb.innerHTML += `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`;
+      const nome = typeof a === 'object' ? a.Nome : a;
+      filterAmb.innerHTML += `<option value="${escapeHtml(nome)}">${escapeHtml(nome)}</option>`;
+    });
+  }
+
+  // Ajustar barra de ações para o Portal do Cliente
+  const actionBar = document.querySelector('.action-bar');
+  if (actionBar) {
+    const adminButtons = actionBar.querySelectorAll('.renew, .revoke, .update, .uninstall, .delete-maq, .add');
+    adminButtons.forEach(btn => {
+      btn.style.display = isClientPortal ? 'none' : '';
     });
   }
 
@@ -624,22 +853,33 @@ function renderMachineList() {
           </div>
           <div class="machine-header-right">
             <span class="machine-status-badge ${statusBadgeClass}">${statusText}</span>
-            <button class="btn-card-trash" onclick="deleteSingleMachine('${m.HardwareID}')" title="Excluir máquina do cadastro" style="background:rgba(233,69,96,0.15); border:1px solid rgba(233,69,96,0.4); color:#FCA5A5; cursor:pointer; font-size:12px; padding:3px 6px; border-radius:6px;">🗑️</button>
+            ${!isClientPortal ? `<button class="btn-card-trash" onclick="deleteSingleMachine('${m.HardwareID}')" title="Excluir máquina do cadastro" style="background:rgba(233,69,96,0.15); border:1px solid rgba(233,69,96,0.4); color:#FCA5A5; cursor:pointer; font-size:12px; padding:3px 6px; border-radius:6px;">🗑️</button>` : ''}
           </div>
         </div>
         <div class="machine-details">
-          <div class="machine-detail-item">
-            <span class="machine-detail-label">Hardware ID</span>
-            <span class="machine-detail-value">${escapeHtml(m.HardwareID)}</span>
-          </div>
-          <div class="machine-detail-item">
-            <span class="machine-detail-label">Vencimento</span>
-            <span class="machine-detail-value ${daysClass}">${expDate} (${daysText})</span>
-          </div>
-          <div class="machine-detail-item" style="grid-column: 1 / -1;">
-            <span class="machine-detail-label">Chave de Ativação</span>
-            <span class="machine-detail-value key" onclick="copyToClipboard('${escapeHtml(m.ChaveGerada || '')}')">${escapeHtml(m.ChaveGerada || 'N/A')} 📋</span>
-          </div>
+          ${isClientPortal ? `
+            <div class="machine-detail-item">
+              <span class="machine-detail-label">Computador</span>
+              <span class="machine-detail-value" style="font-weight:700; color:white;">${escapeHtml(m.NomeExibicao || m.HardwareID)}</span>
+            </div>
+            <div class="machine-detail-item">
+              <span class="machine-detail-label">Status Atual</span>
+              <span class="machine-detail-value" style="color:${statusClass === 'status-frozen' ? 'var(--accent-green)' : 'var(--accent-red)'}; font-weight:700;">${statusText}</span>
+            </div>
+          ` : `
+            <div class="machine-detail-item">
+              <span class="machine-detail-label">Hardware ID</span>
+              <span class="machine-detail-value">${escapeHtml(m.HardwareID)}</span>
+            </div>
+            <div class="machine-detail-item">
+              <span class="machine-detail-label">Vencimento</span>
+              <span class="machine-detail-value ${daysClass}">${expDate} (${daysText})</span>
+            </div>
+            <div class="machine-detail-item" style="grid-column: 1 / -1;">
+              <span class="machine-detail-label">Chave de Ativação</span>
+              <span class="machine-detail-value key" onclick="copyToClipboard('${escapeHtml(m.ChaveGerada || '')}')">${escapeHtml(m.ChaveGerada || 'N/A')} 📋</span>
+            </div>
+          `}
         </div>
       </div>`;
   });
@@ -1959,6 +2199,92 @@ function toggleAppTheme() {
 }
 
 // ============================================
+// Funções do Portal do Cliente
+// ============================================
+function checkPortalRoute() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const portalParam = urlParams.get('portal') || urlParams.get('cliente');
+  if (portalParam) {
+    initClientPortal(portalParam);
+    return true;
+  }
+  return false;
+}
+
+function initClientPortal(portalKey) {
+  // Buscar cliente por ID ou Usuário
+  const client = DB.find(c => c.Id === portalKey || (c.PortalUser && c.PortalUser.toLowerCase() === portalKey.toLowerCase()));
+  if (!client) {
+    showToast('Portal do cliente não encontrado.', 'error');
+    navigateTo('dashboard');
+    return;
+  }
+
+  if (client.PortalPass) {
+    showModal(`
+      <div class="modal-title">🔐 Acesso ao Portal</div>
+      <p style="color:var(--text-secondary); font-size:13px; text-align:center; margin-bottom:14px;">
+        Digite a senha de acesso para <strong>${escapeHtml(client.Instituicao || 'este laboratório')}</strong>:
+      </p>
+      <div class="detail-field">
+        <input type="password" class="detail-input" id="portal-auth-pass" placeholder="Digite a senha..." style="text-align:center; font-size:16px; letter-spacing:2px;" autocomplete="off">
+      </div>
+      <div class="modal-buttons">
+        <button class="modal-btn-confirm" onclick="confirmPortalAuth('${escapeHtml(client.Id)}')">ENTRAR NO PAINEL</button>
+      </div>
+    `);
+  } else {
+    enterClientPortal(client);
+  }
+}
+
+function confirmPortalAuth(clientId) {
+  const client = DB.find(c => c.Id === clientId);
+  if (!client) return;
+  const pass = document.getElementById('portal-auth-pass')?.value || '';
+  if (pass === client.PortalPass) {
+    closeModal();
+    enterClientPortal(client);
+  } else {
+    showToast('Senha incorreta!', 'error');
+    document.getElementById('portal-auth-pass')?.focus();
+  }
+}
+
+function enterClientPortal(client) {
+  isClientPortal = true;
+  selectedClient = client;
+
+  // Atualizar Header
+  const titleEl = document.querySelector('.header-title');
+  if (titleEl) {
+    titleEl.innerHTML = `${escapeHtml(client.Instituicao || 'Portal')} <span class="client-portal-header-tag">Cliente</span>`;
+  }
+  
+  const backBtn = document.querySelector('.header-back');
+  if (backBtn) {
+    backBtn.innerHTML = '🚪 Sair';
+    backBtn.classList.add('active');
+    backBtn.onclick = exitClientPortal;
+  }
+
+  // Ocultar navegação administrativa
+  const bottomNav = document.querySelector('.bottom-nav');
+  if (bottomNav) bottomNav.style.display = 'none';
+
+  navigateTo('machines', client);
+  showToast(`Bem-vindo ao painel de ${client.Instituicao}!`, 'success');
+}
+
+function exitClientPortal() {
+  if (confirm('Deseja sair do Portal do Cliente?')) {
+    isClientPortal = false;
+    selectedClient = null;
+    window.location.href = window.location.origin + window.location.pathname;
+  }
+}
+
+// ============================================
 // Inicialização
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -1983,15 +2309,19 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSettings();
   });
 
-  // Splash Screen
+  // Splash Screen & Roteamento
   setTimeout(() => {
     document.getElementById('splash-screen').classList.add('hidden');
     document.getElementById('app').classList.add('visible');
     
-    if (localStorage.getItem('security_pin_enabled') === 'true') {
-      showLockScreen('unlock');
-    } else {
-      navigateTo('dashboard');
+    // Verificar se entrou por link de Portal do Cliente
+    const isPortal = checkPortalRoute();
+    if (!isPortal) {
+      if (localStorage.getItem('security_pin_enabled') === 'true') {
+        showLockScreen('unlock');
+      } else {
+        navigateTo('dashboard');
+      }
     }
   }, 2200);
 

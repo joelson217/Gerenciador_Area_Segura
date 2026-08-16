@@ -109,42 +109,86 @@
       <!-- ======== PÁGINA: DETALHES DO CLIENTE ======== -->
       <div id="page-detail" class="page">
 
-        <!-- Dados do Cliente -->
+        <!-- Accordion: Dados do Cliente -->
+        <div class="detail-section" id="accordion-client-section">
+          <div class="accordion-header" id="client-accordion-btn" onclick="toggleClientAccordion()">
+            <div class="accordion-header-left">
+              <span class="accordion-icon">📋</span>
+              <span class="accordion-title">Dados do Cliente</span>
+              <span class="portal-badge" id="portal-status-badge" style="display:none;">Portal Ativo</span>
+            </div>
+            <span class="accordion-chevron" id="client-accordion-chevron">▼</span>
+          </div>
+
+          <div class="accordion-content" id="client-accordion-content" style="display: none;">
+            <div class="detail-field">
+              <div class="detail-label">Instituição / Empresa</div>
+              <input type="text" class="detail-input" id="detail-instituicao" placeholder="Nome da instituição">
+            </div>
+
+            <div class="detail-field">
+              <div class="detail-label">Localidade / Endereço</div>
+              <input type="text" class="detail-input" id="detail-localidade" placeholder="Cidade, Bairro, Endereço">
+            </div>
+
+            <div class="detail-field">
+              <div class="detail-label">Responsável</div>
+              <input type="text" class="detail-input" id="detail-responsavel" placeholder="Nome do responsável">
+            </div>
+
+            <div class="detail-field">
+              <div class="detail-label">Contato (WhatsApp / Email)</div>
+              <input type="text" class="detail-input" id="detail-contato" placeholder="(DDD) 99999-9999 / email@exemplo.com">
+            </div>
+
+            <!-- Caixa de Acesso ao Portal do Cliente -->
+            <div class="client-portal-box">
+              <div class="client-portal-box-title">
+                <span>🔐</span>
+                <span>Portal Exclusivo do Cliente</span>
+              </div>
+              
+              <div class="detail-field">
+                <div class="detail-label">Usuário / Login do Cliente</div>
+                <input type="text" class="detail-input" id="detail-portal-user" placeholder="Ex: lab_escola (sem espaços)" autocomplete="off">
+              </div>
+
+              <div class="detail-field">
+                <div class="detail-label">Senha de Acesso do Cliente</div>
+                <input type="text" class="detail-input" id="detail-portal-pass" placeholder="Ex: 123456" autocomplete="off">
+              </div>
+
+              <div class="detail-field">
+                <div class="detail-label">Link de Acesso Direto do Cliente</div>
+                <div style="display: flex; gap: 8px;">
+                  <input type="text" class="detail-input" id="detail-portal-link" readonly style="color: var(--accent-green); font-size: 11px; flex: 1;">
+                  <button class="btn-secondary" style="padding: 0 12px; font-size: 12px; white-space: nowrap;" onclick="copyClientPortalLink()">📋 Copiar</button>
+                </div>
+              </div>
+
+              <button class="btn-secondary" style="width: 100%; margin-top: 8px; background: #25D366; color: white; border: none; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;" onclick="shareClientPortalWhatsApp()">
+                <span>📱</span>
+                <span>Enviar Link e Senha via WhatsApp</span>
+              </button>
+            </div>
+
+            <button class="btn-primary" style="margin-top: 16px;" onclick="saveClientDetails()">💾 SALVAR DADOS DO CLIENTE</button>
+            <button class="btn-danger" style="margin-top: 10px; background:#E94560; color:white; width:100%; padding:12px; border:none; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;" onclick="showDeleteClientModal()">🗑️ EXCLUIR CLIENTE</button>
+          </div>
+        </div>
+
+        <!-- Seção de Ambientes / Laboratórios -->
         <div class="detail-section">
-          <div class="detail-section-title">📋 Dados do Cliente</div>
-
-          <div class="detail-field">
-            <div class="detail-label">Instituição</div>
-            <input type="text" class="detail-input" id="detail-instituicao">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div class="detail-section-title" style="margin-bottom: 0;">🏢 Ambientes / Laboratórios</div>
+            <button class="btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="showAddAmbienteModal()">➕ Novo Lab</button>
           </div>
-
-          <div class="detail-field">
-            <div class="detail-label">Localidade / Endereço</div>
-            <input type="text" class="detail-input" id="detail-localidade">
-          </div>
-
-          <div class="detail-field">
-            <div class="detail-label">Responsável</div>
-            <input type="text" class="detail-input" id="detail-responsavel">
-          </div>
-
-          <div class="detail-field">
-            <div class="detail-label">Contato (WhatsApp / Email)</div>
-            <input type="text" class="detail-input" id="detail-contato">
-          </div>
-
-          <div class="detail-field">
-            <div class="detail-label">Ambientes (Separados por vírgula)</div>
-            <input type="text" class="detail-input" id="detail-ambientes" placeholder="Ex: Lab Principal, Lab 2, Diretoria">
-          </div>
-
-          <button class="btn-primary" style="margin-top: 12px;" onclick="saveClientDetails()">💾 SALVAR DADOS</button>
-          <button class="btn-danger" style="margin-top: 10px; background:#E94560; color:white; width:100%; padding:12px; border:none; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;" onclick="showDeleteClientModal()">🗑️ EXCLUIR CLIENTE</button>
+          <div id="detail-ambientes-container"></div>
         </div>
 
         <!-- Máquinas -->
         <div class="detail-section">
-          <div class="detail-section-title">🖥️ Máquinas</div>
+          <div class="detail-section-title">🖥️ Máquinas Cadastradas</div>
           <div id="detail-maq-count" style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">0 máquina(s)</div>
           <button class="btn-primary" onclick="navigateTo('machines', selectedClient)">VER / GERENCIAR MÁQUINAS →</button>
         </div>
