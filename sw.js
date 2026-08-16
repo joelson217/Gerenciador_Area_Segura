@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gerenciador-v1.5.9';
+const CACHE_NAME = 'gerenciador-v1.6.0';
 const ASSETS = [
   './',
   './index.html',
