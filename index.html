@@ -361,7 +361,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Versão do Gerenciador:</span>
-              <span class="info-value-highlight" id="app-version-display">v2.1.1 Pro Enterprise</span>
+              <span class="info-value-highlight" id="app-version-display">v2.1.2 Pro Enterprise</span>
             </div>
             <div class="info-row">
               <span class="info-label">Criptografia de Licenças:</span>
@@ -401,6 +401,29 @@
       </button>
     </nav>
 
+  </div>
+
+  <!-- ============================================ -->
+  <!-- LOGIN DO PORTAL DO CLIENTE -->
+  <!-- ============================================ -->
+  <div id="portal-login-screen" class="lock-screen-overlay" style="display:none">
+    <div class="lock-container">
+      <img src="logo.png" alt="Logo" class="lock-logo">
+      <h2 class="lock-title">Portal do Cliente</h2>
+      <p class="lock-subtitle">Entre com o usuário e a senha de acesso do laboratório</p>
+
+      <div class="detail-field" style="width:100%; text-align:left; margin-bottom:12px;">
+        <label class="detail-label" for="portal-login-user">Usuário</label>
+        <input type="text" class="detail-input" id="portal-login-user" autocomplete="username" autocapitalize="off" onkeydown="if(event.key==='Enter') document.getElementById('portal-login-pass').focus()">
+      </div>
+      <div class="detail-field" style="width:100%; text-align:left; margin-bottom:20px;">
+        <label class="detail-label" for="portal-login-pass">Senha</label>
+        <input type="password" class="detail-input" id="portal-login-pass" autocomplete="current-password" onkeydown="if(event.key==='Enter') submitPortalLogin()">
+      </div>
+
+      <button class="btn-primary" style="width:100%;" onclick="submitPortalLogin()">Entrar</button>
+      <p id="portal-login-error" style="color:var(--accent-red); font-size:12px; margin-top:12px; min-height:16px;"></p>
+    </div>
   </div>
 
   <!-- ============================================ -->

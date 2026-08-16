@@ -107,7 +107,15 @@ async function saveDB() {
 
   // Sincronizar banco de dados para a nuvem (só admin, via Edge Function)
   const result = await callLicenseApi('admin-save-db', { db: DB, admin_token: getAdminToken() });
-  if (result.error) console.error('Erro ao salvar backup na nuvem:', result.error);
+  if (result.error) {
+    console.error('Erro ao salvar backup na nuvem:', result.error);
+    if (result.error === 'não autorizado') {
+      localStorage.removeItem('area_segura_admin_token');
+      showToast('Token de administrador incorreto. Tente salvar de novo.', 'error');
+    } else {
+      showToast('Não foi possível sincronizar com a nuvem (offline?).', 'warning');
+    }
+  }
 }
 
 async function syncFromCloud() {
@@ -1130,7 +1138,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.1.1';
+let currentAppVersion = '2.1.2';
 
 async function checkAppVersion() {
   try {
@@ -1226,18 +1234,46 @@ function getPortalKeyFromUrl() {
   return urlParams.get('portal') || urlParams.get('cliente');
 }
 
-// Faz login no portal chamando a Edge Function diretamente — o navegador do
+// Mostra a tela de login do portal (usuário + senha). O navegador do
 // cliente nunca baixa o array com os outros clientes, só o resultado deste.
-async function initClientPortal(portalKey) {
-  const pass = prompt('🔐 Digite a senha de acesso do laboratório (deixe em branco se não tiver senha):') || '';
-  const result = await callLicenseApi('portal-login', { portal_key: portalKey, portal_pass: pass });
+function initClientPortal(portalKey) {
+  const screen = document.getElementById('portal-login-screen');
+  const userInput = document.getElementById('portal-login-user');
+  const errorEl = document.getElementById('portal-login-error');
+  if (errorEl) errorEl.textContent = '';
+  // Pré-preenche o usuário se o link já veio com o identificador do cliente
+  // (mas o campo continua editável — o login sempre exige usuário + senha).
+  if (userInput) userInput.value = portalKey && !portalKey.includes('-') ? portalKey : '';
+  if (screen) screen.style.display = 'flex';
+  setTimeout(() => {
+    const target = userInput && userInput.value ? document.getElementById('portal-login-pass') : userInput;
+    target?.focus();
+  }, 50);
+}
 
-  if (result.error || !result.client) {
-    alert(result.error === 'Senha incorreta.' ? 'Senha incorreta!' : 'Portal do cliente não localizado.');
-    window.location.href = window.location.origin + window.location.pathname;
+async function submitPortalLogin() {
+  const userEl = document.getElementById('portal-login-user');
+  const passEl = document.getElementById('portal-login-pass');
+  const errorEl = document.getElementById('portal-login-error');
+  const user = userEl?.value.trim() || '';
+  const pass = passEl?.value || '';
+
+  if (!user) {
+    if (errorEl) errorEl.textContent = 'Digite o usuário de acesso.';
+    userEl?.focus();
     return;
   }
 
+  const result = await callLicenseApi('portal-login', { portal_key: user, portal_pass: pass });
+
+  if (result.error || !result.client) {
+    if (errorEl) errorEl.textContent = result.error === 'Senha incorreta.' ? 'Usuário ou senha incorretos.' : 'Portal não encontrado. Confira o usuário digitado.';
+    passEl?.focus();
+    return;
+  }
+
+  const screen = document.getElementById('portal-login-screen');
+  if (screen) screen.style.display = 'none';
   portalSessionToken = result.token;
   cloudStatuses = { ...cloudStatuses, ...(result.statuses || {}) };
   enterClientPortal(result.client);
