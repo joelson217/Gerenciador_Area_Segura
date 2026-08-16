@@ -54,6 +54,15 @@ body.theme-slate {
   --text-muted: #4B5563;
 }
 
+/* --- Ícones (substituem emojis por SVGs consistentes) --- */
+.icon {
+  width: 1.1em;
+  height: 1.1em;
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex-shrink: 0;
+}
+
 /* --- Reset & Base --- */
 *, *::before, *::after {
   margin: 0;

@@ -16,6 +16,43 @@
 </head>
 <body>
 
+  <!-- Sprite de ícones (substitui emojis por um sistema de ícones consistente) -->
+  <svg style="display:none" aria-hidden="true">
+    <symbol id="icon-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5"/><circle cx="17" cy="8.5" r="2.4"/><path d="M17 12.2c2.6.2 5 1.9 5 4.8"/></symbol>
+    <symbol id="icon-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></symbol>
+    <symbol id="icon-hourglass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12"/><path d="M6 21h12"/><path d="M7 3c0 6 5 6 5 9s-5 3-5 9"/><path d="M17 3c0 6-5 6-5 9s5 3 5 9"/></symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3.5v5.5c0 5-3.4 8.7-8 11-4.6-2.3-8-6-8-11V5.5L12 2z"/></symbol>
+    <symbol id="icon-shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3.5v5.5c0 5-3.4 8.7-8 11-4.6-2.3-8-6-8-11V5.5L12 2z"/><polyline points="9 12 11 14 15 10"/></symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></symbol>
+    <symbol id="icon-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V4"/><polyline points="7 9 12 4 17 9"/><path d="M5 21h14"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+    <symbol id="icon-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><rect x="9" y="2" width="6" height="4" rx="1"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="13" y2="15"/></symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+    <symbol id="icon-message" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="3"/><path d="M8 17l-3 4v-4"/></symbol>
+    <symbol id="icon-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l3 3v15H5z"/><rect x="8" y="3" width="8" height="5"/><rect x="7" y="13" width="10" height="7"/></symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></symbol>
+    <symbol id="icon-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="1"/><line x1="8" y1="7" x2="8" y2="7"/><line x1="12" y1="7" x2="12" y2="7"/><line x1="16" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="8" y2="11"/><line x1="12" y1="11" x2="12" y2="11"/><line x1="16" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="8" y2="15"/><line x1="12" y1="15" x2="12" y2="15"/><line x1="16" y1="15" x2="16" y2="15"/></symbol>
+    <symbol id="icon-snowflake" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></symbol>
+    <symbol id="icon-flame" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c1 4-4 5-4 10a4 4 0 0 0 8 0c0-2-1-3-1-5 2 1 3 3 3 6a6 6 0 0 1-12 0c0-6 5-7 6-11z"/></symbol>
+    <symbol id="icon-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="15" r="4"/><line x1="10" y1="12" x2="20" y2="2"/><line x1="17" y1="5" x2="20" y2="8"/><line x1="14" y1="8" x2="16" y2="10"/></symbol>
+    <symbol id="icon-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></symbol>
+    <symbol id="icon-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+    <symbol id="icon-alert-triangle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L1 21h22L12 2z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12" y2="17.01"/></symbol>
+    <symbol id="icon-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2"/></symbol>
+    <symbol id="icon-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a5 5 0 1 1 1.3-9.8A6 6 0 0 1 22 11a4 4 0 0 1-4.5 8z"/></symbol>
+    <symbol id="icon-bar-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="4" y2="10"/><line x1="10" y1="20" x2="10" y2="4"/><line x1="16" y1="20" x2="16" y2="14"/></symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></symbol>
+    <symbol id="icon-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></symbol>
+    <symbol id="icon-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+    <symbol id="icon-log-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+    <symbol id="icon-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></symbol>
+    <symbol id="icon-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></symbol>
+  </svg>
+
   <!-- ============================================ -->
   <!-- SPLASH SCREEN -->
   <!-- ============================================ -->
@@ -70,7 +107,7 @@
           <div class="dash-card card-clients" onclick="navigateTo('clients')">
             <div class="dash-card-header">
               <span class="dash-card-label">Clientes</span>
-              <span class="dash-card-icon">👥</span>
+              <svg class="icon dash-card-icon"><use href="#icon-users"/></svg>
             </div>
             <div class="dash-card-value" id="stat-clients">0</div>
             <div class="dash-card-footer">Cadastrados no sistema</div>
@@ -79,7 +116,7 @@
           <div class="dash-card card-machines" onclick="navigateTo('clients')">
             <div class="dash-card-header">
               <span class="dash-card-label">Máquinas</span>
-              <span class="dash-card-icon">🖥️</span>
+              <svg class="icon dash-card-icon"><use href="#icon-monitor"/></svg>
             </div>
             <div class="dash-card-value" id="stat-machines">0</div>
             <div class="dash-card-footer">Terminais ativos</div>
@@ -88,7 +125,7 @@
           <div class="dash-card card-expiring" onclick="navigateTo('expiring')">
             <div class="dash-card-header">
               <span class="dash-card-label">Expirando</span>
-              <span class="dash-card-icon">⏳</span>
+              <svg class="icon dash-card-icon"><use href="#icon-hourglass"/></svg>
             </div>
             <div class="dash-card-value" id="stat-expiring">0</div>
             <div class="dash-card-footer">≤ 30 dias de validade</div>
@@ -97,7 +134,7 @@
           <div class="dash-card card-ok">
             <div class="dash-card-header">
               <span class="dash-card-label">Em Dia</span>
-              <span class="dash-card-icon">🛡️</span>
+              <svg class="icon dash-card-icon"><use href="#icon-shield-check"/></svg>
             </div>
             <div class="dash-card-value" id="stat-ok">0</div>
             <div class="dash-card-footer">Licenças regulares</div>
@@ -110,15 +147,15 @@
         </div>
         <div class="quick-actions-grid">
           <button class="btn-primary-action" onclick="showNewClientModal()">
-            <span class="action-icon">➕</span>
+            <svg class="icon"><use href="#icon-plus"/></svg>
             <span>Novo Cliente</span>
           </button>
           <button class="btn-secondary-action" onclick="importDB()">
-            <span class="action-icon">📥</span>
+            <svg class="icon"><use href="#icon-download"/></svg>
             <span>Importar</span>
           </button>
           <button class="btn-secondary-action" onclick="exportDB()">
-            <span class="action-icon">📤</span>
+            <svg class="icon"><use href="#icon-upload"/></svg>
             <span>Exportar</span>
           </button>
         </div>
@@ -134,14 +171,14 @@
       <!-- ======== PÁGINA: LISTA DE CLIENTES ======== -->
       <div id="page-clients" class="page">
         <div class="search-bar">
-          <span class="search-bar-icon">🔍</span>
+          <svg class="icon search-bar-icon"><use href="#icon-search"/></svg>
           <input type="text" id="search-clients" placeholder="Buscar por cliente, instituição ou contato..." autocomplete="off">
         </div>
 
         <div id="client-list-container" class="client-list"></div>
 
         <button class="btn-floating-action" onclick="showNewClientModal()">
-          <span>➕</span>
+          <svg class="icon"><use href="#icon-plus"/></svg>
           <span>NOVO CLIENTE</span>
         </button>
       </div>
@@ -153,7 +190,7 @@
         <div class="detail-section" id="accordion-client-section">
           <div class="accordion-header" id="client-accordion-btn" onclick="toggleClientAccordion()">
             <div class="accordion-header-left">
-              <span class="accordion-icon">📋</span>
+              <svg class="icon accordion-icon"><use href="#icon-clipboard"/></svg>
               <span class="accordion-title">Dados da Instituição</span>
               <span class="portal-badge" id="portal-status-badge" style="display:none;">Portal Ativo</span>
             </div>
@@ -184,7 +221,7 @@
             <!-- Caixa de Acesso ao Portal do Cliente -->
             <div class="client-portal-box">
               <div class="client-portal-box-title">
-                <span class="portal-lock-icon">🔐</span>
+                <svg class="icon portal-lock-icon"><use href="#icon-lock"/></svg>
                 <span>Portal Exclusivo do Cliente (Acesso Restrito)</span>
               </div>
               
@@ -202,19 +239,19 @@
                 <label class="detail-label" for="detail-portal-link">Link Direto de Acesso</label>
                 <div class="input-with-button">
                   <input type="text" class="detail-input" id="detail-portal-link" readonly>
-                  <button class="btn-copy-link" onclick="copyClientPortalLink()">📋 Copiar</button>
+                  <button class="btn-copy-link" onclick="copyClientPortalLink()"><svg class="icon"><use href="#icon-copy"/></svg> Copiar</button>
                 </div>
               </div>
 
               <button class="btn-whatsapp-share" onclick="shareClientPortalWhatsApp()">
-                <span>📱</span>
+                <svg class="icon"><use href="#icon-message"/></svg>
                 <span>Enviar Acesso via WhatsApp</span>
               </button>
             </div>
 
             <div class="action-buttons-group">
-              <button class="btn-primary" onclick="saveClientDetails()">💾 SALVAR ALTERAÇÕES</button>
-              <button class="btn-danger-outline" onclick="showDeleteClientModal()">🗑️ Excluir Cliente</button>
+              <button class="btn-primary" onclick="saveClientDetails()"><svg class="icon"><use href="#icon-save"/></svg> SALVAR ALTERAÇÕES</button>
+              <button class="btn-danger-outline" onclick="showDeleteClientModal()"><svg class="icon"><use href="#icon-trash"/></svg> Excluir Cliente</button>
             </div>
           </div>
         </div>
@@ -222,15 +259,15 @@
         <!-- Seção de Ambientes / Laboratórios -->
         <div class="detail-section">
           <div class="section-header-inline">
-            <div class="detail-section-title">🏢 Ambientes & Laboratórios</div>
-            <button class="btn-small-action" onclick="showAddAmbienteModal()">➕ Novo Lab</button>
+            <div class="detail-section-title"><svg class="icon"><use href="#icon-building"/></svg> Ambientes &amp; Laboratórios</div>
+            <button class="btn-small-action" onclick="showAddAmbienteModal()"><svg class="icon"><use href="#icon-plus"/></svg> Novo Lab</button>
           </div>
           <div id="detail-ambientes-container"></div>
         </div>
 
         <!-- Máquinas Cadastradas -->
         <div class="detail-section">
-          <div class="detail-section-title">🖥️ Máquinas Cadastradas</div>
+          <div class="detail-section-title"><svg class="icon"><use href="#icon-monitor"/></svg> Máquinas Cadastradas</div>
           <div id="detail-maq-count" class="detail-counter-text">0 máquina(s) vinculada(s)</div>
           <button class="btn-primary" onclick="navigateTo('machines', selectedClient)">GERENCIAR MÁQUINAS →</button>
         </div>
@@ -242,14 +279,14 @@
         <!-- Barra de Ações em Lote -->
         <div class="action-bar-container">
           <div class="action-bar">
-            <button class="action-btn freeze" onclick="freezeSelected()">🧊 Congelar</button>
-            <button class="action-btn thaw" onclick="thawSelected()">🔥 Descongelar</button>
-            <button class="action-btn renew" onclick="showRenewModal()">🔑 Renovar</button>
-            <button class="action-btn revoke" onclick="revokeSelected()">🚫 Revogar</button>
-            <button class="action-btn update" onclick="showUpdateModal()">🔄 Atualizar</button>
-            <button class="action-btn uninstall" onclick="uninstallSelected()">⚡ Desinstalar</button>
-            <button class="action-btn delete-maq" onclick="deleteSelectedMachines()">🗑️ Excluir</button>
-            <button class="action-btn add" onclick="showAddMachineModal()">➕ Nova</button>
+            <button class="action-btn freeze" onclick="freezeSelected()"><svg class="icon"><use href="#icon-snowflake"/></svg> Congelar</button>
+            <button class="action-btn thaw" onclick="thawSelected()"><svg class="icon"><use href="#icon-flame"/></svg> Descongelar</button>
+            <button class="action-btn renew" onclick="showRenewModal()"><svg class="icon"><use href="#icon-key"/></svg> Renovar</button>
+            <button class="action-btn revoke" onclick="revokeSelected()"><svg class="icon"><use href="#icon-ban"/></svg> Revogar</button>
+            <button class="action-btn update" onclick="showUpdateModal()"><svg class="icon"><use href="#icon-refresh"/></svg> Atualizar</button>
+            <button class="action-btn uninstall" onclick="uninstallSelected()"><svg class="icon"><use href="#icon-zap"/></svg> Desinstalar</button>
+            <button class="action-btn delete-maq" onclick="deleteSelectedMachines()"><svg class="icon"><use href="#icon-trash"/></svg> Excluir</button>
+            <button class="action-btn add" onclick="showAddMachineModal()"><svg class="icon"><use href="#icon-plus"/></svg> Nova</button>
           </div>
         </div>
 
@@ -258,7 +295,7 @@
           <select class="filter-select" id="filter-ambiente" onchange="renderMachineList()">
             <option value="">Todos os Ambientes</option>
           </select>
-          <input type="text" id="search-machine" class="detail-input search-machine-input" placeholder="🔍 Buscar HWID..." oninput="renderMachineList()">
+          <input type="text" id="search-machine" class="detail-input search-machine-input" placeholder="Buscar HWID..." oninput="renderMachineList()">
         </div>
 
         <!-- Seleção Global -->
@@ -276,16 +313,16 @@
 
       <!-- ======== PÁGINA: RELATÓRIO EXPIRANDO ======== -->
       <div id="page-expiring" class="page">
-        <div class="section-title">⚠️ Licenças Próximas do Vencimento (≤ 30 dias)</div>
+        <div class="section-title"><svg class="icon"><use href="#icon-alert-triangle"/></svg> Licenças Próximas do Vencimento (≤ 30 dias)</div>
         <div id="expiring-list" class="expiring-list"></div>
       </div>
 
       <!-- ======== PÁGINA: CONFIGURAÇÕES E SEGURANÇA ======== -->
       <div id="page-settings" class="page">
-        <div class="section-title">⚙️ Ajustes e Segurança do Sistema</div>
-        
+        <div class="section-title"><svg class="icon"><use href="#icon-sliders"/></svg> Ajustes e Segurança do Sistema</div>
+
         <div class="settings-card">
-          <div class="settings-group-title">🔒 Segurança de Acesso</div>
+          <div class="settings-group-title"><svg class="icon"><use href="#icon-lock"/></svg> Segurança de Acesso</div>
           
           <div class="settings-item">
             <div class="settings-info">
@@ -310,13 +347,13 @@
           </div>
           
           <div class="settings-action-row" id="change-pin-row" style="display: none;">
-            <button class="btn-secondary" onclick="startPinChange()">✏️ Redefinir PIN de Acesso</button>
+            <button class="btn-secondary" onclick="startPinChange()"><svg class="icon"><use href="#icon-pencil"/></svg> Redefinir PIN de Acesso</button>
           </div>
         </div>
-        
+
         <!-- Sincronização & Informações do Servidor -->
         <div class="settings-card">
-          <div class="settings-group-title">📡 Nuvem & Atualização do Sistema</div>
+          <div class="settings-group-title"><svg class="icon"><use href="#icon-cloud"/></svg> Nuvem &amp; Atualização do Sistema</div>
           <div class="settings-static-info">
             <div class="info-row">
               <span class="info-label">Servidor Supabase:</span>
@@ -324,7 +361,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Versão do Gerenciador:</span>
-              <span class="info-value-highlight" id="app-version-display">v2.0.0 Pro Enterprise</span>
+              <span class="info-value-highlight" id="app-version-display">v2.1.0 Pro Enterprise</span>
             </div>
             <div class="info-row">
               <span class="info-label">Criptografia de Licenças:</span>
@@ -334,7 +371,7 @@
 
           <div class="settings-update-box">
             <button class="btn-force-update" onclick="forceAppUpdate()">
-              <span>🔄</span>
+              <svg class="icon"><use href="#icon-refresh"/></svg>
               <span>Forçar Atualização / Limpar Cache do Celular</span>
             </button>
             <p class="update-subtext">Limpa todos os dados antigos armazenados pelo navegador móvel e baixa a versão mais recente em tempo real.</p>
@@ -347,19 +384,19 @@
     <!-- Navegação Inferior (Bottom Tabs) -->
     <nav class="bottom-nav">
       <button class="nav-item active" data-page="dashboard">
-        <span class="nav-item-icon">📊</span>
+        <svg class="icon nav-item-icon"><use href="#icon-bar-chart"/></svg>
         <span class="nav-item-label">Início</span>
       </button>
       <button class="nav-item" data-page="clients">
-        <span class="nav-item-icon">👥</span>
+        <svg class="icon nav-item-icon"><use href="#icon-users"/></svg>
         <span class="nav-item-label">Clientes</span>
       </button>
       <button class="nav-item" data-page="expiring">
-        <span class="nav-item-icon">⏳</span>
+        <svg class="icon nav-item-icon"><use href="#icon-hourglass"/></svg>
         <span class="nav-item-label">Alertas</span>
       </button>
       <button class="nav-item" data-page="settings">
-        <span class="nav-item-icon">⚙️</span>
+        <svg class="icon nav-item-icon"><use href="#icon-sliders"/></svg>
         <span class="nav-item-label">Ajustes</span>
       </button>
     </nav>
@@ -396,8 +433,8 @@
         <button class="pin-btn" onclick="pressPinNum('7')">7</button>
         <button class="pin-btn" onclick="pressPinNum('8')">8</button>
         <button class="pin-btn" onclick="pressPinNum('9')">9</button>
-        <button class="pin-btn action-btn-biometric" id="btn-biometric-auth" onclick="triggerBiometricAuth()">
-          <span class="biometric-icon">👤</span>
+        <button class="pin-btn action-btn-biometric" id="btn-biometric-auth" onclick="triggerBiometricAuth()" aria-label="Autenticação biométrica">
+          <svg class="icon biometric-icon"><use href="#icon-user"/></svg>
         </button>
         <button class="pin-btn" onclick="pressPinNum('0')">0</button>
         <button class="pin-btn action-btn-delete" onclick="deletePinDigit()">⌫</button>

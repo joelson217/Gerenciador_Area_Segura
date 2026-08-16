@@ -3,17 +3,35 @@
 // Versão: 2.0.0 Pro Enterprise
 // ============================================
 
-// --- Configuração Supabase ---
-const SUPABASE_URL = 'https://inndgkbugwegrkbvogew.supabase.co/rest/v1';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubmRna2J1Z3dlZ3JrYnZvZ2V3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDQ2ODgsImV4cCI6MjA5NDYyMDY4OH0.8_ZW6I_XbG5UGMEMOKKoY51OA7P97FNdCiBqHs5e00E';
-const HMAC_SECRET = 'AreaSegura@Joelson!2026';
+// --- Configuração da API (Edge Function) ---
+// O app nunca mais fala direto com a tabela do banco. Toda operação sensível
+// (gerar chave de licença, comando remoto, dados de clientes) passa por uma
+// Supabase Edge Function que guarda os segredos só no servidor.
+const SUPABASE_PROJECT_URL = 'https://inndgkbugwegrkbvogew.supabase.co';
+const LICENSE_API_URL = `${SUPABASE_PROJECT_URL}/functions/v1/license-api`;
 const PIN_SALT = '@AreaSegura_Salt_2026!';
 
-const supaHeaders = {
-  'apikey': SUPABASE_KEY,
-  'Authorization': `Bearer ${SUPABASE_KEY}`,
-  'Content-Type': 'application/json'
-};
+function getAdminToken() {
+  let token = localStorage.getItem('area_segura_admin_token');
+  if (!token) {
+    token = (prompt('Token de Administrador (definido ao publicar a Edge Function):') || '').trim();
+    if (token) localStorage.setItem('area_segura_admin_token', token);
+  }
+  return token;
+}
+
+async function callLicenseApi(action, payload = {}) {
+  try {
+    const res = await fetch(LICENSE_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload })
+    });
+    return await res.json();
+  } catch (e) {
+    return { error: 'offline' };
+  }
+}
 
 // --- Estado da Aplicação ---
 let DB = [];
@@ -29,66 +47,29 @@ let pinLockoutUntil = 0;
 let pinLockoutTimer = null;
 
 // ============================================
-// HMAC-SHA256 Criptográfico (Geração de Chaves)
+// Licenciamento e Comandos Remotos (via Edge Function)
 // ============================================
-async function hmacSHA256(key, message) {
-  const enc = new TextEncoder();
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw', enc.encode(key),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false, ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(message));
-  return Array.from(new Uint8Array(sig))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('').substring(0, 16).toUpperCase();
-}
-
+// A chave de ativação agora é gerada e assinada no servidor — o segredo
+// nunca chega ao navegador. Chamar isto também persiste a licença no banco.
 async function getActivationKey(hardwareId, expirationDate) {
-  const dataToSign = `${hardwareId}|${expirationDate}`;
-  const hashStr = await hmacSHA256(HMAC_SECRET, dataToSign);
-  return `${expirationDate}-${hashStr}`;
+  const result = await callLicenseApi('activate', {
+    hardware_id: hardwareId,
+    expiration_date: expirationDate,
+    admin_token: getAdminToken()
+  });
+  if (result.error) showToast(`Erro ao gerar chave: ${result.error}`, 'error');
+  return result.chave_ativacao || '';
 }
 
-// ============================================
-// API Supabase Cloud
-// ============================================
 async function fetchCloudStatuses() {
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/licencas?select=hardware_id,status_protecao,pasta_persistente,comando_remoto,ultima_sincronizacao,chave_ativa`,
-      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
-    );
-    if (!res.ok) return;
-    const data = await res.json();
-    cloudStatuses = {};
-    data.forEach(r => { cloudStatuses[r.hardware_id] = r; });
-  } catch (e) { /* offline */ }
-}
-
-async function syncSupabase(hwId, chave, dataExp) {
-  try {
-    await fetch(`${SUPABASE_URL}/licencas`, {
-      method: 'POST',
-      headers: { ...supaHeaders, 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({
-        hardware_id: hwId,
-        chave_ativacao: chave,
-        data_expiracao: dataExp,
-        comando_remoto: 'NONE'
-      })
-    });
-  } catch (e) { /* offline */ }
+  const result = await callLicenseApi('admin-sync', { admin_token: getAdminToken() });
+  if (result.error) return;
+  cloudStatuses = {};
+  (result.statuses || []).forEach(r => { cloudStatuses[r.hardware_id] = r; });
 }
 
 async function sendSupabaseCommand(hwId, cmd) {
-  try {
-    await fetch(`${SUPABASE_URL}/licencas?hardware_id=eq.${hwId}`, {
-      method: 'PATCH',
-      headers: supaHeaders,
-      body: JSON.stringify({ comando_remoto: cmd })
-    });
-  } catch (e) { /* offline */ }
+  await callLicenseApi('command', { hardware_id: hwId, comando: cmd, admin_token: getAdminToken() });
 }
 
 // ============================================
@@ -123,84 +104,56 @@ async function saveDB() {
     return;
   }
   localStorage.setItem('area_segura_db', JSON.stringify(DB));
-  
-  // Sincronizar banco de dados para a nuvem
-  try {
-    await fetch(`${SUPABASE_URL}/licencas`, {
-      method: 'POST',
-      headers: { ...supaHeaders, 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({
-        hardware_id: 'DB_BACKUP',
-        chave_ativacao: JSON.stringify(DB),
-        data_expiracao: '1970-01-01',
-        status_protecao: 'BACKUP',
-        pasta_persistente: 'Nenhuma',
-        comando_remoto: 'NONE',
-        ultima_sincronizacao: new Date().toLocaleString('pt-BR')
-      })
-    });
-  } catch (e) { console.error('Erro ao salvar backup na nuvem:', e); }
+
+  // Sincronizar banco de dados para a nuvem (só admin, via Edge Function)
+  const result = await callLicenseApi('admin-save-db', { db: DB, admin_token: getAdminToken() });
+  if (result.error) console.error('Erro ao salvar backup na nuvem:', result.error);
 }
 
 async function syncFromCloud() {
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/licencas?select=*`,
-      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
-    );
-    if (!res.ok) return;
-    const cloudData = await res.json();
+  if (isClientPortal) return; // portal usa portal-login/portal-refresh, nunca o banco inteiro
+  const result = await callLicenseApi('admin-sync', { admin_token: getAdminToken() });
+  if (result.error) return;
 
-    // Sincronização de backup apenas para administradores (não em modo portal isolado)
-    if (!isClientPortal) {
-      const backupRow = cloudData.find(r => r.hardware_id === 'DB_BACKUP');
-      if (backupRow && backupRow.chave_ativacao) {
-        try {
-          const cloudDB = JSON.parse(backupRow.chave_ativacao);
-          if (Array.isArray(cloudDB) && cloudDB.length > 0) {
-            if (DB.length === 0 || JSON.stringify(DB) !== JSON.stringify(cloudDB)) {
-              DB = cloudDB;
-              localStorage.setItem('area_segura_db', JSON.stringify(DB));
-              if (currentPage === 'dashboard') renderDashboard();
-              else if (currentPage === 'clients') renderClientList();
-            }
-          }
-        } catch (err) { console.error('Erro ao processar backup:', err); }
-      }
-    }
-
-    // Carregar status reais das máquinas
-    cloudStatuses = {};
-    let dbUpdated = false;
-    cloudData.forEach(r => {
-      if (r.hardware_id !== 'DB_BACKUP') {
-        cloudStatuses[r.hardware_id] = r;
-        
-        if (!isClientPortal && DB.length > 0) {
-          const found = DB.some(c => c.Maquinas && c.Maquinas.some(m => m.HardwareID === r.hardware_id));
-          if (!found) {
-            if (!DB[0].Maquinas) DB[0].Maquinas = [];
-            DB[0].Maquinas.push({
-              Id: generateId(),
-              Laboratorio: 'Lab Principal',
-              HardwareID: r.hardware_id,
-              DataExpiracao: r.data_expiracao || '2027-08-15',
-              ChaveGerada: r.chave_ativacao || '',
-              NomeExibicao: r.hardware_id
-            });
-            dbUpdated = true;
-          }
-        }
-      }
-    });
-
-    if (dbUpdated && !isClientPortal) {
+  const cloudDB = result.db_backup;
+  if (Array.isArray(cloudDB) && cloudDB.length > 0) {
+    if (DB.length === 0 || JSON.stringify(DB) !== JSON.stringify(cloudDB)) {
+      DB = cloudDB;
       localStorage.setItem('area_segura_db', JSON.stringify(DB));
+      if (currentPage === 'dashboard') renderDashboard();
+      else if (currentPage === 'clients') renderClientList();
     }
+  }
 
-    if (currentPage === 'dashboard') renderDashboard();
-    else if (currentPage === 'machines') renderMachineList();
-  } catch (e) { /* offline */ }
+  // Carregar status reais das máquinas
+  cloudStatuses = {};
+  let dbUpdated = false;
+  (result.statuses || []).forEach(r => {
+    cloudStatuses[r.hardware_id] = r;
+
+    if (DB.length > 0) {
+      const found = DB.some(c => c.Maquinas && c.Maquinas.some(m => m.HardwareID === r.hardware_id));
+      if (!found) {
+        if (!DB[0].Maquinas) DB[0].Maquinas = [];
+        DB[0].Maquinas.push({
+          Id: generateId(),
+          Laboratorio: 'Lab Principal',
+          HardwareID: r.hardware_id,
+          DataExpiracao: r.data_expiracao || '2027-08-15',
+          ChaveGerada: r.chave_ativacao || '',
+          NomeExibicao: r.hardware_id
+        });
+        dbUpdated = true;
+      }
+    }
+  });
+
+  if (dbUpdated) {
+    localStorage.setItem('area_segura_db', JSON.stringify(DB));
+  }
+
+  if (currentPage === 'dashboard') renderDashboard();
+  else if (currentPage === 'machines') renderMachineList();
 }
 
 // ============================================
@@ -314,8 +267,8 @@ function renderDashboard() {
         <span class="client-card-tag">${totalMaq} máquina(s)</span>
       </div>
       <div class="client-card-meta">
-        <span>📍 ${escapeHtml(c.Localidade || 'Não informada')}</span>
-        <span>👤 ${escapeHtml(c.Responsavel || 'Não informado')}</span>
+        <span><svg class="icon"><use href="#icon-map-pin"/></svg> ${escapeHtml(c.Localidade || 'Não informada')}</span>
+        <span><svg class="icon"><use href="#icon-user"/></svg> ${escapeHtml(c.Responsavel || 'Não informado')}</span>
       </div>
     `;
     card.onclick = () => navigateTo('detail', c);
@@ -341,7 +294,7 @@ function renderPendingMachinesBanner() {
   banner.innerHTML = `
     <div class="pending-alert-card" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-        <span style="font-weight:700; color:var(--accent-orange); font-size:13px;">⚠️ ${pendingHwIds.length} Novo(s) Computador(es) Detectado(s)</span>
+        <span style="font-weight:700; color:var(--accent-orange); font-size:13px; display:inline-flex; align-items:center; gap:6px;"><svg class="icon"><use href="#icon-alert-triangle"/></svg> ${pendingHwIds.length} Novo(s) Computador(es) Detectado(s)</span>
       </div>
       <p style="font-size:12px; color:var(--text-secondary); margin-bottom:10px;">Há terminais recém-instalados aguardando ativação de licença na nuvem.</p>
       <button class="btn-small-action" style="background:var(--accent-orange); color:#0F172A; font-weight:700; width:100%; padding:8px;" onclick="navigateTo('clients')">
@@ -385,9 +338,9 @@ function renderClientList(query = '') {
         <span class="client-card-tag">${totalMaq} máquina(s)</span>
       </div>
       <div class="client-card-meta">
-        <span>📍 ${escapeHtml(c.Localidade || 'Não informada')}</span>
-        <span>👤 ${escapeHtml(c.Responsavel || 'Não informado')}</span>
-        ${c.Contato ? `<span>📞 ${escapeHtml(c.Contato)}</span>` : ''}
+        <span><svg class="icon"><use href="#icon-map-pin"/></svg> ${escapeHtml(c.Localidade || 'Não informada')}</span>
+        <span><svg class="icon"><use href="#icon-user"/></svg> ${escapeHtml(c.Responsavel || 'Não informado')}</span>
+        ${c.Contato ? `<span><svg class="icon"><use href="#icon-phone"/></svg> ${escapeHtml(c.Contato)}</span>` : ''}
       </div>
     `;
     card.onclick = () => navigateTo('detail', c);
@@ -516,7 +469,7 @@ function renderAmbientes() {
     tag.style.alignItems = 'center';
     tag.style.gap = '6px';
     tag.innerHTML = `
-      <span>🏢 ${escapeHtml(amb)}</span>
+      <span><svg class="icon"><use href="#icon-building"/></svg> ${escapeHtml(amb)}</span>
       <strong style="color:var(--accent-blue);">(${count} PCs)</strong>
     `;
     grid.appendChild(tag);
@@ -588,13 +541,16 @@ function renderMachineList() {
     const isPending = status === 'PENDENTE';
 
     let badgeClass = 'status-thawed';
-    let statusLabel = '🔥 Descongelado';
+    let statusIcon = 'icon-flame';
+    let statusLabel = 'Descongelado';
     if (isFrozen) {
       badgeClass = 'status-frozen';
-      statusLabel = '🧊 Protegido (Congelado)';
+      statusIcon = 'icon-snowflake';
+      statusLabel = 'Protegido (Congelado)';
     } else if (isPending) {
       badgeClass = 'status-pending';
-      statusLabel = '⏳ Pendente de Ativação';
+      statusIcon = 'icon-hourglass';
+      statusLabel = 'Pendente de Ativação';
     }
 
     const card = document.createElement('div');
@@ -605,7 +561,7 @@ function renderMachineList() {
           <input type="checkbox" class="machine-checkbox" data-hwid="${escapeHtml(m.HardwareID)}" onchange="updateSelectCount()">
           <span class="machine-card-title">${escapeHtml(m.NomeExibicao || m.HardwareID)}</span>
         </div>
-        <span class="machine-status-badge ${badgeClass}">${statusLabel}</span>
+        <span class="machine-status-badge ${badgeClass}"><svg class="icon"><use href="#${statusIcon}"/></svg> ${statusLabel}</span>
       </div>
       <div class="machine-card-body">
         <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
@@ -615,7 +571,7 @@ function renderMachineList() {
       </div>
       <div class="machine-card-footer">
         <span>Última Sinc: ${cloud.ultima_sincronizacao || 'Sem dados recentes'}</span>
-        <button class="btn-small-action" onclick="copyMachineKey('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')">📋 Copiar Chave</button>
+        <button class="btn-small-action" onclick="copyMachineKey('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-copy"/></svg> Copiar Chave</button>
       </div>
     `;
     container.appendChild(card);
@@ -724,9 +680,8 @@ function showRenewModal() {
   if (expDate && /^\d{4}-\d{2}-\d{2}$/.test(expDate.trim())) {
     const cleanDate = expDate.trim();
     selected.forEach(async hwId => {
-      const chave = await getActivationKey(hwId, cleanDate);
-      await syncSupabase(hwId, chave, cleanDate);
-      
+      const chave = await getActivationKey(hwId, cleanDate); // já persiste a licença no servidor
+
       // Atualizar local
       if (selectedClient && selectedClient.Maquinas) {
         const maq = selectedClient.Maquinas.find(m => m.HardwareID === hwId);
@@ -777,8 +732,7 @@ function showAddMachineModal() {
       NomeExibicao: cleanHw
     });
 
-    getActivationKey(cleanHw, exp).then(chave => {
-      syncSupabase(cleanHw, chave, exp);
+    getActivationKey(cleanHw, exp).then(chave => { // já persiste a licença no servidor
       saveDB();
       renderMachineList();
       showToast(`Máquina ${cleanHw} cadastrada com sucesso!`, 'success');
@@ -854,7 +808,7 @@ function renderExpiringReport() {
   });
 
   if (expiringList.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">🎉 Todas as máquinas estão com licenças regulares em dia!</div></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text"><svg class="icon"><use href="#icon-check-circle"/></svg> Todas as máquinas estão com licenças regulares em dia!</div></div>';
     return;
   }
 
@@ -875,8 +829,8 @@ function renderExpiringReport() {
         </span>
       </div>
       <div class="client-card-meta">
-        <span>🖥️ ${escapeHtml(item.machine.NomeExibicao || item.machine.HardwareID)}</span>
-        <span>📅 Vence em: ${item.machine.DataExpiracao}</span>
+        <span><svg class="icon"><use href="#icon-monitor"/></svg> ${escapeHtml(item.machine.NomeExibicao || item.machine.HardwareID)}</span>
+        <span><svg class="icon"><use href="#icon-calendar"/></svg> Vence em: ${item.machine.DataExpiracao}</span>
       </div>
     `;
     card.onclick = () => navigateTo('machines', item.client);
@@ -1155,7 +1109,7 @@ function renderSettings() {
 // ============================================
 // Atualização de Versão e Limpeza de Cache Mobile
 // ============================================
-let currentAppVersion = '2.0.0';
+let currentAppVersion = '2.1.0';
 
 async function checkAppVersion() {
   try {
@@ -1244,34 +1198,37 @@ function toggleAppTheme() {
 // ============================================
 // Portal Exclusivo do Cliente (Isolamento de Segurança)
 // ============================================
-function checkPortalRoute() {
+let portalSessionToken = null;
+
+function getPortalKeyFromUrl() {
   const urlParams = new URLSearchParams(window.location.search);
-  const portalParam = urlParams.get('portal') || urlParams.get('cliente');
-  if (portalParam) {
-    initClientPortal(portalParam);
-    return true;
-  }
-  return false;
+  return urlParams.get('portal') || urlParams.get('cliente');
 }
 
-function initClientPortal(portalKey) {
-  const client = DB.find(c => c.Id === portalKey || (c.PortalUser && c.PortalUser.toLowerCase() === portalKey.toLowerCase()));
-  if (!client) {
-    showToast('Portal do cliente não localizado.', 'error');
-    navigateTo('dashboard');
+// Faz login no portal chamando a Edge Function diretamente — o navegador do
+// cliente nunca baixa o array com os outros clientes, só o resultado deste.
+async function initClientPortal(portalKey) {
+  const pass = prompt('🔐 Digite a senha de acesso do laboratório (deixe em branco se não tiver senha):') || '';
+  const result = await callLicenseApi('portal-login', { portal_key: portalKey, portal_pass: pass });
+
+  if (result.error || !result.client) {
+    alert(result.error === 'Senha incorreta.' ? 'Senha incorreta!' : 'Portal do cliente não localizado.');
+    window.location.href = window.location.origin + window.location.pathname;
     return;
   }
 
-  if (client.PortalPass) {
-    const entered = prompt(`🔐 Digite a senha de acesso para o laboratório de "${client.Instituicao}":`);
-    if (entered === client.PortalPass) {
-      enterClientPortal(client);
-    } else {
-      alert('Senha incorreta!');
-      window.location.href = window.location.origin + window.location.pathname;
-    }
-  } else {
-    enterClientPortal(client);
+  portalSessionToken = result.token;
+  cloudStatuses = { ...cloudStatuses, ...(result.statuses || {}) };
+  enterClientPortal(result.client);
+}
+
+async function portalRefresh() {
+  if (!portalSessionToken) return;
+  const result = await callLicenseApi('portal-refresh', { token: portalSessionToken });
+  if (result.client) {
+    selectedClient = result.client;
+    cloudStatuses = { ...cloudStatuses, ...(result.statuses || {}) };
+    if (currentPage === 'machines') renderMachineList();
   }
 }
 
@@ -1287,7 +1244,7 @@ function enterClientPortal(client) {
 
   const backBtn = document.querySelector('.header-back');
   if (backBtn) {
-    backBtn.innerHTML = '🚪 Sair';
+    backBtn.innerHTML = '<svg class="icon"><use href="#icon-log-out"></use></svg> Sair';
     backBtn.classList.add('active');
     backBtn.onclick = exitClientPortal;
   }
@@ -1303,6 +1260,7 @@ function exitClientPortal() {
   if (confirm('Deseja sair do Portal do Cliente?')) {
     isClientPortal = false;
     selectedClient = null;
+    portalSessionToken = null;
     window.location.href = window.location.origin + window.location.pathname;
   }
 }
@@ -1412,6 +1370,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   loadDB();
 
+  // Detecta o modo portal ANTES de qualquer chamada admin — um visitante do
+  // portal nunca deve disparar sincronização do banco inteiro (admin-sync).
+  const portalKeyFromUrl = getPortalKeyFromUrl();
+  isClientPortal = !!portalKeyFromUrl;
+
   // Registrar Service Worker com tratamento de updates
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').then(reg => {
@@ -1440,22 +1403,23 @@ document.addEventListener('DOMContentLoaded', () => {
   // Checagem de versão
   checkAppVersion();
 
-  // Sincronização em segundo plano
-  syncFromCloud();
-  fetchCloudStatuses();
+  // Sincronização em segundo plano (só fora do portal — portal usa portal-login)
+  if (!isClientPortal) {
+    syncFromCloud();
+    fetchCloudStatuses();
+  }
 
   // Splash Screen e Rota Inicial
   setTimeout(() => {
     document.getElementById('splash-screen').classList.add('hidden');
     document.getElementById('app').classList.add('visible');
 
-    const isPortal = checkPortalRoute();
-    if (!isPortal) {
-      if (localStorage.getItem('security_pin_enabled') === 'true') {
-        showLockScreen('unlock');
-      } else {
-        navigateTo('dashboard');
-      }
+    if (portalKeyFromUrl) {
+      initClientPortal(portalKeyFromUrl);
+    } else if (localStorage.getItem('security_pin_enabled') === 'true') {
+      showLockScreen('unlock');
+    } else {
+      navigateTo('dashboard');
     }
   }, 500);
 
@@ -1476,8 +1440,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sincronização periódica a cada 15 segundos
   setInterval(() => {
-    fetchCloudStatuses();
-    if (currentPage === 'machines') renderMachineList();
+    if (isClientPortal) {
+      portalRefresh();
+    } else {
+      fetchCloudStatuses();
+      if (currentPage === 'machines') renderMachineList();
+    }
   }, 15000);
 
   // Checar novas versões a cada 60 segundos
@@ -1488,7 +1456,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Recarregar status quando a aba voltar ao foco
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      fetchCloudStatuses();
+      if (isClientPortal) portalRefresh();
+      else fetchCloudStatuses();
       checkAppVersion();
     }
   });
