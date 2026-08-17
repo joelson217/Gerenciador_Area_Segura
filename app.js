@@ -355,25 +355,35 @@ function renderPendingMachinesBanner() {
     return;
   }
 
-  // Cada máquina pendente já aparece aqui com um botão pra copiar a chave
-  // na hora — não depende de achar em qual cliente ela foi anexada
-  // automaticamente (o app anexa máquinas novas ao cliente mais recente
-  // por padrão, o que nem sempre é o cliente certo).
-  const rows = pendingHwIds.map(hwId => `
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-top:1px solid rgba(245, 158, 11, 0.25);">
+  // Cada máquina pendente já aparece aqui com data de validade escolhível e
+  // um botão que já autoriza e ativa na hora - não depende de achar em qual
+  // cliente ela foi anexada automaticamente (o app anexa máquinas novas ao
+  // cliente mais recente por padrão, o que nem sempre é o cliente certo).
+  // Se o computador do cliente tiver internet, ele mesmo detecta a
+  // ativação sozinho na próxima checagem - o texto/QR Code só é necessário
+  // pra máquinas sem internet.
+  const defaultExp = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const rows = pendingHwIds.map(hwId => {
+    const inputId = `pending-exp-${hwId.replace(/[^a-zA-Z0-9]/g, '')}`;
+    return `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-top:1px solid rgba(245, 158, 11, 0.25); flex-wrap:wrap;">
       <code style="font-size:12px; color:var(--text-primary);">${escapeHtml(hwId)}</code>
-      <button class="btn-small-action" style="background:var(--accent-orange); color:#0F172A; font-weight:700; flex-shrink:0;" onclick="copyMachineKey('${escapeHtml(hwId)}', '1970-01-01')">
-        <svg class="icon"><use href="#icon-copy"/></svg> Copiar Chave
-      </button>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <input type="date" id="${inputId}" value="${defaultExp}" class="detail-input" style="padding:4px 6px; font-size:12px; width:auto;">
+        <button class="btn-small-action" style="background:var(--accent-orange); color:#0F172A; font-weight:700; flex-shrink:0;" onclick="authorizeAndActivate('${escapeHtml(hwId)}', '${inputId}')">
+          <svg class="icon"><use href="#icon-check-circle"/></svg> Autorizar e Ativar
+        </button>
+      </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   banner.innerHTML = `
     <div class="pending-alert-card" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
         <span style="font-weight:700; color:var(--accent-orange); font-size:13px; display:inline-flex; align-items:center; gap:6px;"><svg class="icon"><use href="#icon-alert-triangle"/></svg> ${pendingHwIds.length} Novo(s) Computador(es) Detectado(s)</span>
       </div>
-      <p style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">Copie a chave e cole na tela de ativação do computador do cliente:</p>
+      <p style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">Escolha a validade e autorize - com internet, o computador ativa sozinho:</p>
       ${rows}
     </div>
   `;
@@ -672,12 +682,13 @@ function renderMachineList() {
       <div class="machine-card-body">
         <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
         <div><strong>Ambiente:</strong> ${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
-        <div><strong>Validade:</strong> ${m.DataExpiracao || 'Indefinida'}</div>
+        <div><strong>Validade:</strong> ${(!m.DataExpiracao || m.DataExpiracao === '1970-01-01') ? 'Aguardando autorização (ainda não ativada)' : m.DataExpiracao}</div>
         ${cloud.pasta_persistente && cloud.pasta_persistente !== 'Nenhuma' ? `<div><strong>Pasta Persistente:</strong> ${escapeHtml(cloud.pasta_persistente)}</div>` : ''}
       </div>
       <div class="machine-card-footer">
         <span>Última Sinc: ${cloud.ultima_sincronizacao || 'Sem dados recentes'}</span>
         <button class="btn-small-action" onclick="copyMachineKey('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-copy"/></svg> Copiar Chave</button>
+        <button class="btn-small-action" onclick="showMachineKeyQr('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-qr-code"/></svg> QR</button>
       </div>
     `;
     container.appendChild(card);
@@ -704,6 +715,52 @@ function toggleSelectAll(checked) {
   updateSelectCount();
 }
 
+// Mostra a chave em texto + QR Code - pensado pra máquinas sem internet:
+// em vez de digitar a chave inteira no computador do cliente, um leitor de
+// código de barras/QR USB (comum em labs/escolas) escaneia a tela e
+// "digita" a chave sozinho, direto no campo de ativação do Área Segura.
+function showActivationKeyModal(key) {
+  const modal = document.getElementById('modal-activation-key');
+  const textInput = document.getElementById('activation-key-modal-text');
+  const qrContainer = document.getElementById('activation-key-modal-qr');
+  if (!modal || !textInput || !qrContainer) return;
+  textInput.value = key;
+  qrContainer.innerHTML = '';
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(key);
+    qr.make();
+    qrContainer.innerHTML = qr.createSvgTag(6, 8);
+  } catch (e) {
+    qrContainer.innerHTML = '<span style="color:#333;">QR indisponível</span>';
+  }
+  modal.style.display = 'flex';
+}
+
+// Autoriza (gera a chave real no servidor) e já ativa a máquina pendente
+// com a validade escolhida pelo admin - se o computador do cliente tiver
+// internet, ele mesmo detecta isso sozinho na próxima checagem, sem
+// precisar copiar/colar nada.
+async function authorizeAndActivate(hwId, inputId) {
+  const input = document.getElementById(inputId);
+  const expDate = input?.value;
+  if (!expDate) {
+    showToast('Escolha uma data de validade.', 'warning');
+    return;
+  }
+  const key = await getActivationKey(hwId, expDate);
+  if (!key) {
+    showToast('Erro ao autorizar. Tente novamente.', 'error');
+    return;
+  }
+  showToast(`Máquina autorizada até ${expDate}! Se estiver online, ativa sozinha em instantes.`, 'success');
+  showActivationKeyModal(key);
+  fetchCloudStatuses().then(() => {
+    if (currentPage === 'machines') renderMachineList();
+    renderPendingMachinesBanner();
+  });
+}
+
 async function copyMachineKey(hwId, expDate) {
   // Máquinas pendentes chegam com DataExpiracao "1970-01-01" (marcador de
   // "ainda não ativada") - gerar a chave com essa data cria uma chave já
@@ -714,8 +771,14 @@ async function copyMachineKey(hwId, expDate) {
   navigator.clipboard.writeText(key).then(() => {
     showToast(`Chave copiada: ${key}`, 'success');
   }).catch(() => {
-    showPromptModal('Copie a chave de ativação abaixo:', key, 'Chave de Ativação');
+    showActivationKeyModal(key);
   });
+}
+
+async function showMachineKeyQr(hwId, expDate) {
+  const exp = (expDate && expDate !== '1970-01-01') ? expDate : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const key = await getActivationKey(hwId, exp);
+  showActivationKeyModal(key);
 }
 
 // Ações Remotas em Lote
