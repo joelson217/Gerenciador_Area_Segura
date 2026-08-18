@@ -805,11 +805,18 @@ function renderMachineList() {
     const isMigrationError = status.startsWith('MIGRACAO2:ERRO');
     const isMigrated = status.startsWith('MIGRACAO2:CONCLUIDA');
     const isMigrating = status.startsWith('MIGRACAO2:') && !isMigrationError && !isMigrated;
+    // Mesma lógica pro comando "Atualizar Executável" - antes uma falha aqui
+    // (rede, antivírus segurando o arquivo) não aparecia em lugar nenhum.
+    const isUpdateError = status.startsWith('ATUALIZACAO_ERRO');
 
     let badgeClass = 'status-thawed';
     let statusIcon = 'icon-flame';
     let statusLabel = 'Descongelado';
-    if (isMigrationError) {
+    if (isUpdateError) {
+      badgeClass = 'status-error';
+      statusIcon = 'icon-alert-triangle';
+      statusLabel = `Falha ao atualizar o executável: ${escapeHtml(status.replace('ATUALIZACAO_ERRO:', '').trim())}`;
+    } else if (isMigrationError) {
       badgeClass = 'status-error';
       statusIcon = 'icon-alert-triangle';
       statusLabel = `Falha na migração p/ Área Segura 2: ${escapeHtml(status.replace('MIGRACAO2:', '').trim())}`;
