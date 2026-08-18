@@ -630,6 +630,13 @@ function renderMachineList() {
   // qualquer máquina marcada pelo admin "desmarcava sozinha" alguns
   // segundos depois, no meio de uma ação.
   const previouslySelected = new Set(getSelectedHwIds());
+  // Mesmo motivo do previouslySelected acima: preserva o que o admin ainda
+  // está digitando no campo de nome/número da máquina caso a sincronização
+  // automática (15s) recrie a lista no meio da digitação.
+  const previousNameDrafts = {};
+  container.querySelectorAll('.machine-name-input').forEach(inp => {
+    previousNameDrafts[inp.dataset.hwid] = inp.value;
+  });
   container.innerHTML = '';
 
   const filterAmb = document.getElementById('filter-ambiente')?.value || '';
@@ -692,6 +699,12 @@ function renderMachineList() {
           ${syncBadge}
         </div>
       </div>
+      <div class="detail-field" style="margin:8px 0;">
+        <input type="text" class="detail-input machine-name-input" data-hwid="${escapeHtml(m.HardwareID)}"
+          placeholder="Nome ou número da máquina (ex: PC-12, Sala 2)"
+          value="${escapeHtml(previousNameDrafts[m.HardwareID] !== undefined ? previousNameDrafts[m.HardwareID] : (m.NomeExibicao && m.NomeExibicao !== m.HardwareID ? m.NomeExibicao : ''))}"
+          onchange="updateMachineName('${escapeHtml(m.HardwareID)}', this.value)">
+      </div>
       <div class="machine-card-body">
         <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
         <div><strong>Ambiente:</strong> ${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
@@ -720,6 +733,19 @@ function updateSelectCount() {
   const selected = getSelectedHwIds();
   const countEl = document.getElementById('select-count');
   if (countEl) countEl.textContent = `${selected.length} selecionada(s)`;
+}
+
+// Nome/número que o admin dá pra máquina só pra reconhecer ela fisicamente
+// no laboratório (ex: "PC-12") - não é enviado pro computador, fica só aqui
+// no Gerenciador. Em branco, volta a mostrar o Hardware ID como título.
+function updateMachineName(hwId, value) {
+  if (!selectedClient || !selectedClient.Maquinas) return;
+  const maq = selectedClient.Maquinas.find(m => m.HardwareID === hwId);
+  if (!maq) return;
+  const clean = value.trim();
+  maq.NomeExibicao = clean || hwId;
+  saveDB();
+  renderMachineList();
 }
 
 function toggleSelectAll(checked) {
