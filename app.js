@@ -195,30 +195,15 @@ async function syncFromCloud() {
 
   // Carregar status reais das máquinas
   cloudStatuses = {};
-  let dbUpdated = false;
   (result.statuses || []).forEach(r => {
     cloudStatuses[r.hardware_id] = r;
-
-    if (DB.length > 0) {
-      const found = DB.some(c => c.Maquinas && c.Maquinas.some(m => m.HardwareID === r.hardware_id));
-      if (!found) {
-        if (!DB[0].Maquinas) DB[0].Maquinas = [];
-        DB[0].Maquinas.push({
-          Id: generateId(),
-          Laboratorio: 'Lab Principal',
-          HardwareID: r.hardware_id,
-          DataExpiracao: r.data_expiracao || '2027-08-15',
-          ChaveGerada: r.chave_ativacao || '',
-          NomeExibicao: r.hardware_id
-        });
-        dbUpdated = true;
-      }
-    }
   });
-
-  if (dbUpdated) {
-    localStorage.setItem('area_segura_db', JSON.stringify(DB));
-  }
+  // Máquinas novas (hardware_id que ainda não está em nenhum cliente) NÃO são
+  // mais anexadas automaticamente a nenhum cliente - isso ficava jogando pro
+  // primeiro cliente da lista, o que embaralha o controle quando existe mais
+  // de um cliente. Elas ficam "soltas" e aparecem no banner de pendentes pra
+  // o admin escolher manualmente pra qual cliente cada uma vai (ver
+  // renderPendingMachinesBanner / authorizeAndActivate).
 
   if (currentPage === 'dashboard') renderDashboard();
   else if (currentPage === 'machines') renderMachineList();
@@ -340,11 +325,16 @@ function renderDashboard() {
   });
 }
 
+// Acha em qual cliente (se algum) uma máquina já está cadastrada.
+function findClientOwning(hwId) {
+  return DB.find(c => c.Maquinas && c.Maquinas.some(m => m.HardwareID === hwId)) || null;
+}
+
 // Banner de Novas Máquinas Detectadas
 function renderPendingMachinesBanner() {
   const banner = document.getElementById('pending-machines-banner');
   if (!banner) return;
-  
+
   const pendingHwIds = Object.keys(cloudStatuses).filter(hwId => {
     const st = cloudStatuses[hwId];
     return st && st.status_protecao === 'PENDENTE';
@@ -355,22 +345,34 @@ function renderPendingMachinesBanner() {
     return;
   }
 
-  // Cada máquina pendente já aparece aqui com data de validade escolhível e
-  // um botão que já autoriza e ativa na hora - não depende de achar em qual
-  // cliente ela foi anexada automaticamente (o app anexa máquinas novas ao
-  // cliente mais recente por padrão, o que nem sempre é o cliente certo).
-  // Se o computador do cliente tiver internet, ele mesmo detecta a
-  // ativação sozinho na próxima checagem - o texto/QR Code só é necessário
-  // pra máquinas sem internet.
+  // Máquina nova não pertence a nenhum cliente até o admin escolher - por
+  // isso cada linha tem um seletor de cliente (pré-marcado com o cliente
+  // aberto na tela, se houver um, mas trocável). "Autorizar e Ativar" só
+  // gera a chave DEPOIS de garantir que a máquina está anexada ao cliente
+  // escolhido - nunca mais cai sozinha no primeiro cliente da lista.
   const defaultExp = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const clientOptions = DB.map(c =>
+    `<option value="${escapeHtml(c.Id)}" ${selectedClient && selectedClient.Id === c.Id ? 'selected' : ''}>${escapeHtml(c.Instituicao || 'Sem Nome')}</option>`
+  ).join('');
+
   const rows = pendingHwIds.map(hwId => {
     const inputId = `pending-exp-${hwId.replace(/[^a-zA-Z0-9]/g, '')}`;
+    const selectId = `pending-client-${hwId.replace(/[^a-zA-Z0-9]/g, '')}`;
+    const owner = findClientOwning(hwId);
+
+    const clientPicker = owner
+      ? `<span style="font-size:11px; color:var(--text-secondary);">Cliente: <strong>${escapeHtml(owner.Instituicao || 'Sem Nome')}</strong></span>`
+      : DB.length > 0
+        ? `<select id="${selectId}" class="detail-input" style="padding:4px 6px; font-size:12px; width:auto;">${clientOptions}</select>`
+        : `<span style="font-size:11px; color:var(--accent-orange);">Cadastre um cliente antes de autorizar</span>`;
+
     return `
     <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-top:1px solid rgba(245, 158, 11, 0.25); flex-wrap:wrap;">
       <code style="font-size:12px; color:var(--text-primary);">${escapeHtml(hwId)}</code>
-      <div style="display:flex; align-items:center; gap:6px;">
+      <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        ${clientPicker}
         <input type="date" id="${inputId}" value="${defaultExp}" class="detail-input" style="padding:4px 6px; font-size:12px; width:auto;">
-        <button class="btn-small-action" style="background:var(--accent-orange); color:#0F172A; font-weight:700; flex-shrink:0;" onclick="authorizeAndActivate('${escapeHtml(hwId)}', '${inputId}')">
+        <button class="btn-small-action" style="background:var(--accent-orange); color:#0F172A; font-weight:700; flex-shrink:0;" ${DB.length === 0 ? 'disabled' : ''} onclick="authorizeAndActivate('${escapeHtml(hwId)}', '${inputId}', ${owner ? 'null' : `'${selectId}'`})">
           <svg class="icon"><use href="#icon-check-circle"/></svg> Autorizar e Ativar
         </button>
       </div>
@@ -383,7 +385,7 @@ function renderPendingMachinesBanner() {
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
         <span style="font-weight:700; color:var(--accent-orange); font-size:13px; display:inline-flex; align-items:center; gap:6px;"><svg class="icon"><use href="#icon-alert-triangle"/></svg> ${pendingHwIds.length} Novo(s) Computador(es) Detectado(s)</span>
       </div>
-      <p style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">Escolha a validade e autorize - com internet, o computador ativa sozinho:</p>
+      <p style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">Escolha o cliente, a validade, e autorize - com internet, o computador ativa sozinho:</p>
       ${rows}
     </div>
   `;
@@ -753,13 +755,36 @@ function showActivationKeyModal(key) {
 // com a validade escolhida pelo admin - se o computador do cliente tiver
 // internet, ele mesmo detecta isso sozinho na próxima checagem, sem
 // precisar copiar/colar nada.
-async function authorizeAndActivate(hwId, inputId) {
+async function authorizeAndActivate(hwId, inputId, clientSelectId) {
   const input = document.getElementById(inputId);
   const expDate = input?.value;
   if (!expDate) {
     showToast('Escolha uma data de validade.', 'warning');
     return;
   }
+
+  // Anexa a máquina ao cliente escolhido no seletor da linha - antes disso
+  // ela não pertence a nenhum cliente (ver syncFromCloud). Se já pertence a
+  // algum (clientSelectId vem null), não mexe em nada.
+  if (clientSelectId) {
+    const select = document.getElementById(clientSelectId);
+    const clientId = select?.value;
+    const targetClient = DB.find(c => c.Id === clientId);
+    if (!targetClient) {
+      showToast('Escolha o cliente antes de autorizar.', 'warning');
+      return;
+    }
+    if (!targetClient.Maquinas) targetClient.Maquinas = [];
+    targetClient.Maquinas.push({
+      Id: generateId(),
+      Laboratorio: 'Lab Principal',
+      HardwareID: hwId,
+      DataExpiracao: expDate,
+      NomeExibicao: hwId
+    });
+    saveDB();
+  }
+
   const key = await getActivationKey(hwId, expDate);
   if (!key) {
     showToast('Erro ao autorizar. Tente novamente.', 'error');
@@ -800,6 +825,7 @@ async function freezeSelected() {
     return;
   }
   if (await showConfirmModal(`Deseja CONGELAR e proteger as ${selected.length} máquina(s) selecionada(s)? O sistema será bloqueado contra alterações.`, 'Congelar Máquinas')) {
+    startSyncWatch(selected);
     for (const hwId of selected) {
       await sendSupabaseCommand(hwId, 'FREEZE|MANTER');
     }
@@ -815,6 +841,7 @@ async function thawSelected() {
     return;
   }
   if (await showConfirmModal(`Deseja DESCONGELAR as ${selected.length} máquina(s) selecionada(s)? As alterações serão mantidas.`, 'Descongelar Máquinas')) {
+    startSyncWatch(selected);
     for (const hwId of selected) {
       await sendSupabaseCommand(hwId, 'THAW');
     }
@@ -830,6 +857,7 @@ async function revokeSelected() {
     return;
   }
   if (await showConfirmModal(`ATENÇÃO: Deseja REVOGAR a licença das ${selected.length} máquina(s)? Elas perderão a ativação imediatamente.`, 'Revogar Licença')) {
+    startSyncWatch(selected);
     for (const hwId of selected) {
       await sendSupabaseCommand(hwId, 'REVOKE');
     }
@@ -845,6 +873,7 @@ async function uninstallSelected() {
     return;
   }
   if (await showConfirmModal(`PERIGO: Deseja DESINSTALAR COMPLETAMENTE o Área Segura nas ${selected.length} máquina(s)? Esta ação é irreversível e reiniciará os computadores.`, 'Desinstalar')) {
+    startSyncWatch(selected);
     for (const hwId of selected) {
       await sendSupabaseCommand(hwId, 'UNINSTALL');
     }
@@ -984,6 +1013,7 @@ async function showUpdateModal() {
   const url = await showPromptModal('URL do novo executável AreaSegura.exe:', defaultUrl, 'Atualizar Executável');
   if (url && url.startsWith('http')) {
     const cleanUrl = url;
+    startSyncWatch(selected);
     selected.forEach(async hwId => {
       await sendSupabaseCommand(hwId, `UPDATE|${cleanUrl}`);
     });
