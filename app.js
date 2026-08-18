@@ -94,6 +94,9 @@ let DB = [];
 let selectedClient = null;
 let cloudStatuses = {};
 let currentPage = 'dashboard';
+// Hardware IDs cujo campo de nome/número está aberto pra edição no momento
+// (só em memória - fecha sozinho depois de salvar ou ao trocar de página).
+let editingNameFor = new Set();
 
 // Controle de Força Bruta no PIN
 let failedPinAttempts = 0;
@@ -699,11 +702,24 @@ function renderMachineList() {
           ${syncBadge}
         </div>
       </div>
-      <div class="detail-field" style="margin:8px 0;">
-        <input type="text" class="detail-input machine-name-input" data-hwid="${escapeHtml(m.HardwareID)}"
-          placeholder="Nome ou número da máquina (ex: PC-12, Sala 2)"
-          value="${escapeHtml(previousNameDrafts[m.HardwareID] !== undefined ? previousNameDrafts[m.HardwareID] : (m.NomeExibicao && m.NomeExibicao !== m.HardwareID ? m.NomeExibicao : ''))}"
-          onchange="updateMachineName('${escapeHtml(m.HardwareID)}', this.value)">
+      <div class="machine-name-row" style="margin:8px 0; display:flex; align-items:center; gap:8px;">
+        ${(() => {
+          const hwId = m.HardwareID;
+          const currentName = (m.NomeExibicao && m.NomeExibicao !== hwId) ? m.NomeExibicao : '';
+          if (editingNameFor.has(hwId)) {
+            const draft = previousNameDrafts[hwId] !== undefined ? previousNameDrafts[hwId] : currentName;
+            return `<input type="text" class="detail-input machine-name-input" data-hwid="${escapeHtml(hwId)}"
+              placeholder="Nome ou número da máquina (ex: PC-12, Sala 2)"
+              value="${escapeHtml(draft)}"
+              onkeydown="if(event.key==='Enter') this.blur()"
+              onchange="updateMachineName('${escapeHtml(hwId)}', this.value)">`;
+          }
+          if (currentName) {
+            return `<span style="font-size:13px; color:var(--text-primary); font-weight:600;">${escapeHtml(currentName)}</span>
+              <button class="btn-small-action" onclick="startEditName('${escapeHtml(hwId)}')"><svg class="icon"><use href="#icon-pencil"/></svg> Renomear</button>`;
+          }
+          return `<button class="btn-small-action" onclick="startEditName('${escapeHtml(hwId)}')"><svg class="icon"><use href="#icon-pencil"/></svg> Adicionar nome/número</button>`;
+        })()}
       </div>
       <div class="machine-card-body">
         <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
@@ -738,6 +754,17 @@ function updateSelectCount() {
 // Nome/número que o admin dá pra máquina só pra reconhecer ela fisicamente
 // no laboratório (ex: "PC-12") - não é enviado pro computador, fica só aqui
 // no Gerenciador. Em branco, volta a mostrar o Hardware ID como título.
+function startEditName(hwId) {
+  editingNameFor.add(hwId);
+  renderMachineList();
+  // Foca o campo assim que ele aparecer na tela (o innerHTML acabou de ser
+  // recriado, então o elemento antigo não existe mais).
+  setTimeout(() => {
+    const input = document.querySelector(`.machine-name-input[data-hwid="${CSS.escape(hwId)}"]`);
+    if (input) { input.focus(); input.select(); }
+  }, 0);
+}
+
 function updateMachineName(hwId, value) {
   if (!selectedClient || !selectedClient.Maquinas) return;
   const maq = selectedClient.Maquinas.find(m => m.HardwareID === hwId);
@@ -745,6 +772,7 @@ function updateMachineName(hwId, value) {
   const clean = value.trim();
   maq.NomeExibicao = clean || hwId;
   saveDB();
+  editingNameFor.delete(hwId);
   renderMachineList();
 
   // Manda pro servidor também - é o que o Área Segura instalado no PC lê no
