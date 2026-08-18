@@ -234,8 +234,26 @@ async function fetchCloudStatuses() {
   (result.statuses || []).forEach(r => { cloudStatuses[r.hardware_id] = r; });
 }
 
+// Retorna true/false - quem chama usa isso pra contar quantas máquinas
+// realmente receberam o comando, em vez de sempre dizer "enviado!" mesmo
+// quando a chamada falhou (token errado, offline etc.) sem avisar ninguém.
 async function sendSupabaseCommand(hwId, cmd) {
-  await callLicenseApi('command', { hardware_id: hwId, comando: cmd, admin_token: getAdminToken() });
+  const result = await callLicenseApi('command', { hardware_id: hwId, comando: cmd, admin_token: getAdminToken() });
+  return !result.error;
+}
+
+// Dispara o mesmo comando pra várias máquinas e conta o que realmente deu
+// certo - usado por todas as ações em lote (Congelar/Descongelar/Revogar/
+// Desinstalar/Atualizar/Migrar) pra dar um retorno preciso, não genérico.
+async function sendCommandToSelected(selected, cmd, successMsgFn) {
+  startSyncWatch(selected);
+  const results = await Promise.all(selected.map(hwId => sendSupabaseCommand(hwId, cmd)));
+  const okCount = results.filter(Boolean).length;
+  const failCount = results.length - okCount;
+  if (okCount > 0) { showToast(successMsgFn(okCount), 'success'); }
+  if (failCount > 0) {
+    showToast(`Não consegui enviar o comando pra ${failCount} máquina(s) - confira o token de administrador e a conexão, e tente de novo.`, 'error');
+  }
 }
 
 // ============================================
@@ -274,6 +292,10 @@ function loadDB() {
 // save nesse meio-tempo sobrescreva os clientes reais na nuvem.
 let initialSyncPromise = null;
 
+// Retorna true/false pra quem chama poder saber se REALMENTE terminou de
+// salvar na nuvem antes de dizer "sucesso" pro usuário - sem isso, uma ação
+// podia mostrar "salvo!" mesmo quando a sincronização falhou por trás
+// (offline, token errado etc.), e a mudança sumia depois sem explicação.
 async function saveDB() {
   if (initialSyncPromise) {
     await initialSyncPromise;
@@ -286,9 +308,11 @@ async function saveDB() {
   if (result.error) {
     console.error('Erro ao salvar backup na nuvem:', result.error);
     if (result.error !== 'não autorizado') {
-      showToast('Não foi possível sincronizar com a nuvem (offline?).', 'warning');
+      showToast('Não foi possível sincronizar com a nuvem (offline?). A alteração ficou salva só neste aparelho por enquanto.', 'warning');
     }
+    return false;
   }
+  return true;
 }
 
 async function syncFromCloud() {
@@ -607,22 +631,21 @@ function toggleClientAccordion() {
   }
 }
 
-function saveClientDetails() {
+async function saveClientDetails() {
   if (!selectedClient) return;
 
   selectedClient.Instituicao = document.getElementById('detail-instituicao')?.value.trim() || selectedClient.Instituicao;
   selectedClient.Localidade = document.getElementById('detail-localidade')?.value.trim() || '';
   selectedClient.Responsavel = document.getElementById('detail-responsavel')?.value.trim() || '';
   selectedClient.Contato = document.getElementById('detail-contato')?.value.trim() || '';
-  
+
   const pUser = document.getElementById('detail-portal-user')?.value.trim().toLowerCase().replace(/\s+/g, '_') || '';
   const pPass = document.getElementById('detail-portal-pass')?.value.trim() || '';
 
   selectedClient.PortalUser = pUser;
   selectedClient.PortalPass = pPass;
 
-  saveDB();
-  showToast('Dados do cliente atualizados com sucesso!', 'success');
+  if (await saveDB()) { showToast('Dados do cliente atualizados com sucesso!', 'success'); }
   renderClientDetail();
 }
 
@@ -673,8 +696,8 @@ function renderAmbientes() {
     tag.innerHTML = `
       <span><svg class="icon"><use href="#icon-building"/></svg> ${escapeHtml(amb)}</span>
       <strong style="color:var(--accent-blue);">(${count} PCs)</strong>
-      <button class="btn-small-action" style="padding:2px 6px; background:transparent; border:none; color:var(--accent-red);" onclick="deleteAmbiente('${escapeHtml(amb).replace(/'/g, "\\'")}')" title="Excluir ambiente" aria-label="Excluir ambiente">
-        <svg class="icon" style="width:0.9em; height:0.9em;"><use href="#icon-trash"/></svg>
+      <button class="btn-small-action" style="padding:4px 10px; background:var(--accent-red-bg); border:1px solid var(--accent-red); color:var(--accent-red); border-radius:6px; display:flex; align-items:center; gap:4px;" onclick="deleteAmbiente('${escapeHtml(amb).replace(/'/g, "\\'")}')" title="Excluir ambiente" aria-label="Excluir ambiente">
+        <svg class="icon" style="width:1em; height:1em;"><use href="#icon-trash"/></svg> Excluir
       </button>
     `;
     grid.appendChild(tag);
@@ -689,9 +712,10 @@ async function showAddAmbienteModal() {
     if (!selectedClient.Ambientes) selectedClient.Ambientes = ['Lab Principal'];
     if (!selectedClient.Ambientes.includes(name)) {
       selectedClient.Ambientes.push(name);
-      saveDB();
+      if (await saveDB()) { showToast(`Ambiente "${name}" adicionado!`, 'success'); }
       renderAmbientes();
-      showToast(`Ambiente "${name}" adicionado!`, 'success');
+    } else {
+      showToast(`Já existe um ambiente chamado "${name}".`, 'warning');
     }
   }
 }
@@ -706,9 +730,8 @@ async function deleteAmbiente(amb) {
   if (await showConfirmModal(`Excluir o ambiente "${amb}"?`, 'Excluir Ambiente')) {
     selectedClient.Ambientes = (selectedClient.Ambientes || []).filter(a => a !== amb);
     if (selectedClient.Ambientes.length === 0) selectedClient.Ambientes = ['Lab Principal'];
-    saveDB();
+    if (await saveDB()) { showToast(`Ambiente "${amb}" excluído!`, 'success'); }
     renderAmbientes();
-    showToast(`Ambiente "${amb}" excluído!`, 'success');
   }
 }
 
@@ -877,19 +900,24 @@ function startEditName(hwId) {
   }, 0);
 }
 
-function updateMachineName(hwId, value) {
+async function updateMachineName(hwId, value) {
   if (!selectedClient || !selectedClient.Maquinas) return;
   const maq = selectedClient.Maquinas.find(m => m.HardwareID === hwId);
   if (!maq) return;
   const clean = value.trim();
   maq.NomeExibicao = clean || hwId;
-  saveDB();
+  const dbOk = await saveDB();
   editingNameFor.delete(hwId);
   renderMachineList();
 
   // Manda pro servidor também - é o que o Área Segura instalado no PC lê no
   // check-in pra mostrar o mesmo nome no painel dele (ver handleSetName).
-  callLicenseApi('set-name', { hardware_id: hwId, nome_maquina: clean, admin_token: getAdminToken() });
+  const result = await callLicenseApi('set-name', { hardware_id: hwId, nome_maquina: clean, admin_token: getAdminToken() });
+  if (dbOk && !result.error) {
+    showToast('Nome da máquina salvo!', 'success');
+  } else if (result.error && result.error !== 'não autorizado') {
+    showToast('Nome salvo no Gerenciador, mas não consegui avisar a máquina ainda - ela vai receber no próximo contato com a internet.', 'warning');
+  }
 }
 
 function toggleSelectAll(checked) {
@@ -952,7 +980,7 @@ async function authorizeAndActivate(hwId, inputId, clientSelectId) {
       DataExpiracao: expDate,
       NomeExibicao: hwId
     });
-    saveDB();
+    await saveDB();
   }
 
   const key = await getActivationKey(hwId, expDate);
@@ -995,11 +1023,7 @@ async function freezeSelected() {
     return;
   }
   if (await showConfirmModal(`Deseja CONGELAR e proteger as ${selected.length} máquina(s) selecionada(s)? O sistema será bloqueado contra alterações.`, 'Congelar Máquinas')) {
-    startSyncWatch(selected);
-    for (const hwId of selected) {
-      await sendSupabaseCommand(hwId, 'FREEZE|MANTER');
-    }
-    showToast(`Comando de congelamento enviado para ${selected.length} máquina(s)!`, 'success');
+    await sendCommandToSelected(selected, 'FREEZE|MANTER', n => `Comando de congelamento enviado para ${n} máquina(s)!`);
     refreshAll();
   }
 }
@@ -1011,11 +1035,7 @@ async function thawSelected() {
     return;
   }
   if (await showConfirmModal(`Deseja DESCONGELAR as ${selected.length} máquina(s) selecionada(s)? As alterações serão mantidas.`, 'Descongelar Máquinas')) {
-    startSyncWatch(selected);
-    for (const hwId of selected) {
-      await sendSupabaseCommand(hwId, 'THAW');
-    }
-    showToast(`Comando de descongelamento enviado para ${selected.length} máquina(s)!`, 'success');
+    await sendCommandToSelected(selected, 'THAW', n => `Comando de descongelamento enviado para ${n} máquina(s)!`);
     refreshAll();
   }
 }
@@ -1027,11 +1047,7 @@ async function revokeSelected() {
     return;
   }
   if (await showConfirmModal(`ATENÇÃO: Deseja REVOGAR a licença das ${selected.length} máquina(s)? Elas perderão a ativação imediatamente.`, 'Revogar Licença')) {
-    startSyncWatch(selected);
-    for (const hwId of selected) {
-      await sendSupabaseCommand(hwId, 'REVOKE');
-    }
-    showToast(`Licença revogada em ${selected.length} máquina(s)!`, 'success');
+    await sendCommandToSelected(selected, 'REVOKE', n => `Licença revogada em ${n} máquina(s)!`);
     refreshAll();
   }
 }
@@ -1043,11 +1059,7 @@ async function uninstallSelected() {
     return;
   }
   if (await showConfirmModal(`PERIGO: Deseja DESINSTALAR COMPLETAMENTE o Área Segura nas ${selected.length} máquina(s)? Esta ação é irreversível e reiniciará os computadores.`, 'Desinstalar')) {
-    startSyncWatch(selected);
-    for (const hwId of selected) {
-      await sendSupabaseCommand(hwId, 'UNINSTALL');
-    }
-    showToast(`Comando de desinstalação enviado para ${selected.length} máquina(s)!`, 'success');
+    await sendCommandToSelected(selected, 'UNINSTALL', n => `Comando de desinstalação enviado para ${n} máquina(s)!`);
     refreshAll();
   }
 }
@@ -1068,7 +1080,10 @@ async function showRenewModal() {
     // não ligaram/não têm internet - ver renderSyncWatchStatus().
     startSyncWatch(selected);
 
-    selected.forEach(async hwId => {
+    // Promise.all (não forEach) - com forEach, o saveDB() de baixo rodava
+    // ANTES das chaves terminarem de voltar do servidor, salvando o banco
+    // sem a validade nova ainda escrita nas máquinas.
+    await Promise.all(selected.map(async hwId => {
       const chave = await getActivationKey(hwId, cleanDate); // já persiste a licença no servidor
 
       // Atualizar local
@@ -1079,10 +1094,9 @@ async function showRenewModal() {
           maq.ChaveGerada = chave;
         }
       }
-    });
+    }));
 
-    saveDB();
-    showToast(`Licenças renovadas até ${cleanDate}!`, 'success');
+    if (await saveDB()) { showToast(`Licenças renovadas até ${cleanDate}!`, 'success'); }
     renderMachineList();
   }
 }
@@ -1182,12 +1196,7 @@ async function showUpdateModal() {
   const defaultUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura.exe';
   const url = await showPromptModal('URL do novo executável AreaSegura.exe:', defaultUrl, 'Atualizar Executável');
   if (url && url.startsWith('http')) {
-    const cleanUrl = url;
-    startSyncWatch(selected);
-    selected.forEach(async hwId => {
-      await sendSupabaseCommand(hwId, `UPDATE|${cleanUrl}`);
-    });
-    showToast(`Comando de atualização enviado para ${selected.length} máquina(s)!`, 'success');
+    await sendCommandToSelected(selected, `UPDATE|${url}`, n => `Comando de atualização enviado para ${n} máquina(s)!`);
   }
 }
 
@@ -1208,11 +1217,7 @@ async function showMigrateModal() {
   if (!(await showConfirmModal(aviso, 'Migrar para Área Segura 2'))) return;
 
   const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
-  startSyncWatch(selected);
-  for (const hwId of selected) {
-    await sendSupabaseCommand(hwId, `MIGRATE2|${zipUrl}`);
-  }
-  showToast(`Comando de migração enviado para ${selected.length} máquina(s) - aplica assim que cada uma se conectar.`, 'success');
+  await sendCommandToSelected(selected, `MIGRATE2|${zipUrl}`, n => `Comando de migração enviado para ${n} máquina(s) - aplica assim que cada uma se conectar.`);
   refreshAll();
 }
 
@@ -1232,11 +1237,10 @@ async function showAddMachineModal() {
       NomeExibicao: cleanHw
     });
 
-    getActivationKey(cleanHw, exp).then(chave => { // já persiste a licença no servidor
-      saveDB();
-      renderMachineList();
-      showToast(`Máquina ${cleanHw} cadastrada com sucesso!`, 'success');
-    });
+    const chave = await getActivationKey(cleanHw, exp); // já persiste a licença no servidor
+    if (chave && (await saveDB())) { showToast(`Máquina ${cleanHw} cadastrada com sucesso!`, 'success'); }
+    else if (!chave) { showToast('Máquina salva no cadastro, mas não consegui gerar a chave de ativação agora - tente Renovar depois.', 'warning'); }
+    renderMachineList();
   }
 }
 
@@ -1248,9 +1252,8 @@ async function deleteSelectedMachines() {
   }
   if (await showConfirmModal(`Excluir as ${selected.length} máquina(s) do cadastro deste cliente?`, 'Excluir Máquinas')) {
     selectedClient.Maquinas = (selectedClient.Maquinas || []).filter(m => !selected.includes(m.HardwareID));
-    saveDB();
+    if (await saveDB()) { showToast(`${selected.length} máquina(s) removida(s) do cadastro!`, 'success'); }
     renderMachineList();
-    showToast(`${selected.length} máquina(s) removida(s) do cadastro!`, 'success');
   }
 }
 
@@ -1258,8 +1261,7 @@ async function showDeleteClientModal() {
   if (!selectedClient) return;
   if (await showConfirmModal(`Tem certeza de que deseja EXCLUIR o cliente "${selectedClient.Instituicao}" e todas as suas máquinas?`, 'Excluir Cliente')) {
     DB = DB.filter(c => c.Id !== selectedClient.Id);
-    saveDB();
-    showToast('Cliente excluído com sucesso!', 'success');
+    if (await saveDB()) { showToast('Cliente excluído com sucesso!', 'success'); }
     navigateTo('clients');
   }
 }
@@ -1328,7 +1330,7 @@ function closeNewClientModal() {
   if (modal) modal.style.display = 'none';
 }
 
-function confirmNewClient() {
+async function confirmNewClient() {
   const name = document.getElementById('new-client-instituicao')?.value.trim() || '';
   if (!name) {
     showToast('Digite o nome da instituição.', 'warning');
@@ -1346,9 +1348,9 @@ function confirmNewClient() {
     NomeExibicao: name
   };
   DB.unshift(newClient);
-  saveDB();
+  const ok = await saveDB();
   closeNewClientModal();
-  showToast(`Cliente "${newClient.Instituicao}" criado!`, 'success');
+  if (ok) { showToast(`Cliente "${newClient.Instituicao}" criado!`, 'success'); }
   navigateTo('detail', newClient);
 }
 
@@ -1785,13 +1787,12 @@ function importDB() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = async ev => {
       try {
         const imported = JSON.parse(ev.target.result);
         if (Array.isArray(imported)) {
           DB = imported;
-          saveDB();
-          showToast(`${DB.length} cliente(s) importado(s) com sucesso!`, 'success');
+          if (await saveDB()) { showToast(`${DB.length} cliente(s) importado(s) com sucesso!`, 'success'); }
           renderDashboard();
         } else {
           showToast('Formato de arquivo inválido.', 'error');
