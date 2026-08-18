@@ -708,11 +708,14 @@ function renderMachineList() {
           const currentName = (m.NomeExibicao && m.NomeExibicao !== hwId) ? m.NomeExibicao : '';
           if (editingNameFor.has(hwId)) {
             const draft = previousNameDrafts[hwId] !== undefined ? previousNameDrafts[hwId] : currentName;
-            return `<input type="text" class="detail-input machine-name-input" data-hwid="${escapeHtml(hwId)}"
+            const inputId = `name-input-${hwId.replace(/[^a-zA-Z0-9]/g, '')}`;
+            return `<input type="text" class="detail-input machine-name-input" id="${inputId}" data-hwid="${escapeHtml(hwId)}"
               placeholder="Nome ou número da máquina (ex: PC-12, Sala 2)"
               value="${escapeHtml(draft)}"
-              onkeydown="if(event.key==='Enter') this.blur()"
-              onchange="updateMachineName('${escapeHtml(hwId)}', this.value)">`;
+              onkeydown="if(event.key==='Enter') updateMachineName('${escapeHtml(hwId)}', this.value)">
+              <button class="btn-small-action" style="background:var(--accent-blue); color:#fff; flex-shrink:0;" onclick="updateMachineName('${escapeHtml(hwId)}', document.getElementById('${inputId}').value)">
+                <svg class="icon"><use href="#icon-save"/></svg> Salvar
+              </button>`;
           }
           if (currentName) {
             return `<span style="font-size:13px; color:var(--text-primary); font-weight:600;">${escapeHtml(currentName)}</span>
