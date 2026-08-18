@@ -1191,6 +1191,31 @@ async function showUpdateModal() {
   }
 }
 
+// Migração remota pro Área Segura 2 (arquitetura nova: serviço SYSTEM +
+// painel sem admin). Reaproveita o mesmo canal de comando remoto que já
+// existe (UPDATE/FREEZE/etc.) - só manda um comando novo, MIGRATE2, que o
+// AreaSegura.exe (v1, já rodando nessas máquinas) sabe processar a partir
+// da versão 2.3.0. A própria máquina baixa o pacote e troca sozinha.
+async function showMigrateModal() {
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina para migrar.', 'warning');
+    return;
+  }
+  const aviso = selected.length === 1
+    ? 'Isso vai REMOVER o Área Segura antigo desta máquina e instalar o Área Segura 2 (novo, sem precisar de conta administrador) automaticamente, sem ninguém precisar tocar no computador. Ela vai reiniciar sozinha ao final. Só funciona com a máquina JÁ ligada e com internet nesse momento (o comando é aplicado no próximo contato dela com a nuvem). Confirma?'
+    : `Isso vai REMOVER o Área Segura antigo e instalar o Área Segura 2 em ${selected.length} máquinas, automaticamente, sem ninguém precisar tocar nelas - todas vão reiniciar sozinhas ao final. Confirma migrar TODAS as ${selected.length} selecionadas agora?`;
+  if (!(await showConfirmModal(aviso, 'Migrar para Área Segura 2'))) return;
+
+  const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
+  startSyncWatch(selected);
+  for (const hwId of selected) {
+    await sendSupabaseCommand(hwId, `MIGRATE2|${zipUrl}`);
+  }
+  showToast(`Comando de migração enviado para ${selected.length} máquina(s) - aplica assim que cada uma se conectar.`, 'success');
+  refreshAll();
+}
+
 async function showAddMachineModal() {
   const hwId = await showPromptModal('Digite o Hardware ID da nova máquina (ex: AS-A1B2C3D4):', '', 'Nova Máquina');
   if (hwId) {
