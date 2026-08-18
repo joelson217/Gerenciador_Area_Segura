@@ -164,6 +164,23 @@ async function checkV2SecurityAlerts() {
   renderV2SecurityAlerts(alerts);
 }
 
+// Só o admin, com o token deste Gerenciador, consegue mandar esses dois
+// comandos - vão pra fila `comando_remoto` do AreaSeguraService (que só ele
+// lê, protegido pelo admin_token no backend), nunca pelo cano local que o
+// painel do aluno usa.
+async function unlockV2Machine(hwId) {
+  const r = await callLicenseApiV2('command', { hardware_id: hwId, comando: 'UNLOCK', admin_token: getAdminToken() });
+  if (r?.ok) { showToast('Desbloqueio enviado - aplica no próximo contato da máquina com a internet.', 'success'); }
+  else { showToast('Não consegui enviar o desbloqueio.', 'error'); }
+}
+async function setPasswordV2Machine(hwId) {
+  const novaSenha = prompt('Nova senha para esta máquina (fica valendo assim que ela conectar):');
+  if (!novaSenha) return;
+  const r = await callLicenseApiV2('command', { hardware_id: hwId, comando: `SETPASS|${novaSenha}`, admin_token: getAdminToken() });
+  if (r?.ok) { showToast('Nova senha enviada - aplica no próximo contato da máquina com a internet.', 'success'); }
+  else { showToast('Não consegui enviar a nova senha.', 'error'); }
+}
+
 function renderV2SecurityAlerts(alerts) {
   const box = document.getElementById('v2-security-alerts');
   if (!box) return;
@@ -172,7 +189,11 @@ function renderV2SecurityAlerts(alerts) {
   box.innerHTML = alerts.map(a => `
     <div class="v2-alert-item ${a.type === 'changed' ? 'v2-alert-changed' : ''}">
       <span class="v2-alert-text">${a.text}</span>
-      <button class="v2-alert-dismiss" onclick="dismissV2Alert('${a.hwId}','${a.field}')">Dispensar</button>
+      <div style="display:flex; gap:6px; flex-shrink:0;">
+        ${a.type === 'blocked' ? `<button class="v2-alert-dismiss" onclick="unlockV2Machine('${a.hwId}')">Desbloquear</button>` : ''}
+        <button class="v2-alert-dismiss" onclick="setPasswordV2Machine('${a.hwId}')">Trocar senha</button>
+        <button class="v2-alert-dismiss" onclick="dismissV2Alert('${a.hwId}','${a.field}')">Dispensar</button>
+      </div>
     </div>
   `).join('');
 }
