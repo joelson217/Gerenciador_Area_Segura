@@ -1490,3 +1490,41 @@ input:checked + .switch-slider:before {
     border-radius: 16px 16px 0 0;
   }
 }
+
+/* --- Alertas de segurança (Área Segura 2 - senha bloqueada/trocada) --- */
+.v2-alert-banner {
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2-alert-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--accent-red-bg);
+  border: 1px solid var(--accent-red);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.v2-alert-item.v2-alert-changed {
+  background: var(--accent-orange-bg);
+  border-color: var(--accent-orange);
+}
+.v2-alert-text {
+  flex: 1;
+  line-height: 1.4;
+}
+.v2-alert-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}

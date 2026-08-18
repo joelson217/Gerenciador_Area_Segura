@@ -9,6 +9,10 @@
 // Supabase Edge Function que guarda os segredos só no servidor.
 const SUPABASE_PROJECT_URL = 'https://inndgkbugwegrkbvogew.supabase.co';
 const LICENSE_API_URL = `${SUPABASE_PROJECT_URL}/functions/v1/license-api`;
+// Backend ISOLADO do AreaSegura2 (tabela licencas2, separada da licencas das
+// 40 máquinas reais) - usado só pra mostrar os alertas de senha bloqueada/
+// trocada da máquina de testes, sem mexer em nada do que já está em produção.
+const LICENSE_API_V2_URL = `${SUPABASE_PROJECT_URL}/functions/v1/license-api-v2`;
 const PIN_SALT = '@AreaSegura_Salt_2026!';
 
 function getAdminToken() {
@@ -58,6 +62,7 @@ async function submitActivation() {
   renderAdminTokenStatus();
   initialSyncPromise = syncFromCloud();
   fetchCloudStatuses();
+  checkV2SecurityAlerts();
   showLockScreen('setup');
 }
 
@@ -87,6 +92,89 @@ async function callLicenseApi(action, payload = {}) {
   } catch (e) {
     return { error: 'offline' };
   }
+}
+
+async function callLicenseApiV2(action, payload = {}) {
+  try {
+    const res = await fetch(LICENSE_API_V2_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload })
+    });
+    return await res.json();
+  } catch (e) {
+    return { error: 'offline' };
+  }
+}
+
+// --- Alertas de segurança do Área Segura 2 (senha bloqueada por tentativas
+// erradas / senha trocada) - mostrados como um aviso destacado assim que o
+// Gerenciador é aberto ou atualizado, pra não depender de e-mail/push (ainda
+// não existe canal pra isso). Guarda no aparelho qual foi o último evento já
+// visto de cada máquina, pra não ficar repetindo o mesmo alerta pra sempre -
+// mas um evento NOVO (data/hora diferente) sempre aparece de novo.
+function getV2AlertsSeen() {
+  try { return JSON.parse(localStorage.getItem('areaSegura2AlertsSeen') || '{}'); }
+  catch (e) { return {}; }
+}
+function saveV2AlertsSeen(seen) {
+  localStorage.setItem('areaSegura2AlertsSeen', JSON.stringify(seen));
+}
+function dismissV2Alert(hwId, field) {
+  const seen = getV2AlertsSeen();
+  seen[hwId] = seen[hwId] || {};
+  seen[hwId][field] = window.__v2AlertValues?.[hwId]?.[field] || true;
+  saveV2AlertsSeen(seen);
+  checkV2SecurityAlerts();
+}
+
+async function checkV2SecurityAlerts() {
+  if (!localStorage.getItem('area_segura_admin_token')) return;
+  const result = await callLicenseApiV2('admin-list', { admin_token: getAdminToken() });
+  const maquinas = result?.maquinas || [];
+  const seen = getV2AlertsSeen();
+  const now = new Date();
+  const alerts = [];
+  window.__v2AlertValues = window.__v2AlertValues || {};
+
+  maquinas.forEach(m => {
+    const hwId = m.hardware_id;
+    const label = m.nome_maquina ? `${m.nome_maquina} (${hwId})` : hwId;
+    window.__v2AlertValues[hwId] = window.__v2AlertValues[hwId] || {};
+
+    if (m.senha_bloqueada_ate) {
+      const ate = new Date(m.senha_bloqueada_ate);
+      if (ate > now && seen[hwId]?.senha_bloqueada_ate !== m.senha_bloqueada_ate) {
+        window.__v2AlertValues[hwId].senha_bloqueada_ate = m.senha_bloqueada_ate;
+        alerts.push({
+          hwId, field: 'senha_bloqueada_ate', type: 'blocked',
+          text: `🔒 ${label}: senha BLOQUEADA por tentativas erradas até ${ate.toLocaleString('pt-BR')}. Só você pode desbloquear ou trocar a senha pelo Gerenciador.`
+        });
+      }
+    }
+    if (m.senha_alterada_em && seen[hwId]?.senha_alterada_em !== m.senha_alterada_em) {
+      window.__v2AlertValues[hwId].senha_alterada_em = m.senha_alterada_em;
+      alerts.push({
+        hwId, field: 'senha_alterada_em', type: 'changed',
+        text: `🔑 ${label}: a senha foi trocada em ${new Date(m.senha_alterada_em).toLocaleString('pt-BR')}.`
+      });
+    }
+  });
+
+  renderV2SecurityAlerts(alerts);
+}
+
+function renderV2SecurityAlerts(alerts) {
+  const box = document.getElementById('v2-security-alerts');
+  if (!box) return;
+  if (!alerts.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'flex';
+  box.innerHTML = alerts.map(a => `
+    <div class="v2-alert-item ${a.type === 'changed' ? 'v2-alert-changed' : ''}">
+      <span class="v2-alert-text">${a.text}</span>
+      <button class="v2-alert-dismiss" onclick="dismissV2Alert('${a.hwId}','${a.field}')">Dispensar</button>
+    </div>
+  `).join('');
 }
 
 // --- Estado da Aplicação ---
@@ -1766,6 +1854,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (localStorage.getItem('area_segura_admin_token')) {
     initialSyncPromise = syncFromCloud();
     fetchCloudStatuses();
+    checkV2SecurityAlerts();
   }
 
   // Splash Screen e Rota Inicial
@@ -1807,6 +1896,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(() => {
     if (!localStorage.getItem('area_segura_admin_token')) return;
     fetchCloudStatuses();
+    checkV2SecurityAlerts();
     if (currentPage === 'machines') renderMachineList();
   }, 15000);
 
@@ -1818,7 +1908,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Recarregar status quando a aba voltar ao foco
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      if (localStorage.getItem('area_segura_admin_token')) fetchCloudStatuses();
+      if (localStorage.getItem('area_segura_admin_token')) { fetchCloudStatuses(); checkV2SecurityAlerts(); }
       checkAppVersion();
     }
   });
