@@ -980,6 +980,12 @@ body {
   border: 1px solid rgba(220, 38, 38, 0.4);
 }
 
+.status-v2 {
+  background: rgba(167, 139, 250, 0.15);
+  color: #A78BFA;
+  border: 1px solid rgba(167, 139, 250, 0.35);
+}
+
 .sync-watch-box {
   display: flex;
   align-items: center;

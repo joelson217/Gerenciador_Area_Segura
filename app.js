@@ -136,6 +136,13 @@ async function checkV2SecurityAlerts() {
   const now = new Date();
   const alerts = [];
   window.__v2AlertValues = window.__v2AlertValues || {};
+  // Guarda por hardware_id pra renderMachineList saber quais máquinas já
+  // migraram - sem isso, o card de uma máquina migrada continuava mostrando
+  // (ou parando de mostrar, depois da correção de "sem contato") o status do
+  // Área Segura ANTIGO, sem nenhum jeito de saber pelo Gerenciador que ela
+  // já está no Área Segura 2.
+  window.__v2MachinesByHwId = {};
+  maquinas.forEach(m => { window.__v2MachinesByHwId[m.hardware_id] = m; });
 
   maquinas.forEach(m => {
     const hwId = m.hardware_id;
@@ -162,6 +169,7 @@ async function checkV2SecurityAlerts() {
   });
 
   renderV2SecurityAlerts(alerts);
+  if (typeof currentPage !== 'undefined' && currentPage === 'machines') renderMachineList();
 }
 
 // Só o admin, com o token deste Gerenciador, consegue mandar esses dois
@@ -815,6 +823,39 @@ function renderMachineList() {
 
   machines.forEach(m => {
     const cloud = cloudStatuses[m.HardwareID] || {};
+    const v2Machine = window.__v2MachinesByHwId?.[m.HardwareID] || null;
+
+    let badgeClass, statusIcon, statusLabel;
+
+    if (v2Machine) {
+      // Assim que uma máquina aparece na tabela v2 (primeiro check-in do
+      // serviço novo, depois do reinício), o card passa a mostrar o status
+      // dela, não mais o do Área Segura antigo - que a essa altura já foi
+      // removido de propósito e nunca mais vai falar com este sistema.
+      const v2Status = v2Machine.status_protecao || 'DESCONHECIDO';
+      const v2LastSync = v2Machine.ultima_sincronizacao || null;
+      const v2LastSyncMs = v2LastSync ? new Date(v2LastSync).getTime() : NaN;
+      const v2Stale = !isNaN(v2LastSyncMs) && (Date.now() - v2LastSyncMs) > MACHINE_STALE_MS;
+
+      if (v2Stale) {
+        badgeClass = 'status-error';
+        statusIcon = 'icon-alert-triangle';
+        statusLabel = `Área Segura 2 - sem contato ${formatRelativeTime(v2LastSync)}`;
+      } else if (v2Status === 'CONGELADO') {
+        badgeClass = 'status-v2';
+        statusIcon = 'icon-snowflake';
+        statusLabel = 'Área Segura 2 - Protegido (Congelado)';
+      } else if (v2Status === 'PENDENTE') {
+        badgeClass = 'status-pending';
+        statusIcon = 'icon-hourglass';
+        statusLabel = 'Área Segura 2 - Pendente de Ativação';
+      } else {
+        badgeClass = 'status-v2';
+        statusIcon = 'icon-check-circle';
+        statusLabel = `Área Segura 2 - ${v2Status === 'DESCONGELADO' ? 'Descongelado' : escapeHtml(v2Status)}`;
+      }
+    } else {
+
     const status = cloud.status_protecao || 'DESCONHECIDO';
     const isFrozen = status === 'CONGELADO';
     const isPending = status === 'PENDENTE';
@@ -838,9 +879,9 @@ function renderMachineList() {
     const lastSyncMs = lastSyncIso ? new Date(lastSyncIso).getTime() : NaN;
     const isStale = !isMigrated && !isNaN(lastSyncMs) && (Date.now() - lastSyncMs) > MACHINE_STALE_MS;
 
-    let badgeClass = 'status-thawed';
-    let statusIcon = 'icon-flame';
-    let statusLabel = 'Descongelado';
+    badgeClass = 'status-thawed';
+    statusIcon = 'icon-flame';
+    statusLabel = 'Descongelado';
     if (isUpdateError) {
       badgeClass = 'status-error';
       statusIcon = 'icon-alert-triangle';
@@ -874,6 +915,8 @@ function renderMachineList() {
       statusIcon = 'icon-alert-triangle';
       statusLabel = 'Proteção Indisponível (edição do Windows)';
     }
+
+    } // fim do else (máquina ainda não migrada / sem registro v2)
 
     const syncState = isSyncConfirmed(m.HardwareID, syncWatch);
     const syncBadge = syncState === null ? '' :
