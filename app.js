@@ -754,7 +754,6 @@ async function authorizeAndActivate(hwId, inputId) {
     return;
   }
   showToast(`Máquina autorizada até ${expDate}! Se estiver online, ativa sozinha em instantes.`, 'success');
-  showActivationKeyModal(key);
   fetchCloudStatuses().then(() => {
     if (currentPage === 'machines') renderMachineList();
     renderPendingMachinesBanner();
