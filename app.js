@@ -797,11 +797,30 @@ function renderMachineList() {
     const isFrozen = status === 'CONGELADO';
     const isPending = status === 'PENDENTE';
     const isUnavailable = status === 'INDISPONIVEL';
+    // Vem do Instalar2.exe -Silent (migração remota pro Área Segura 2) - sem
+    // isso, se a migração travasse em algum passo no meio do caminho, a
+    // máquina simplesmente continuava mostrando o status antigo pra sempre,
+    // sem nenhuma pista do que aconteceu (ver Sync-MigrationStatus).
+    const isMigrating = status.startsWith('MIGRACAO2:EM ANDAMENTO');
+    const isMigrated = status.startsWith('MIGRACAO2:CONCLUIDA');
+    const isMigrationError = status.startsWith('MIGRACAO2:ERRO');
 
     let badgeClass = 'status-thawed';
     let statusIcon = 'icon-flame';
     let statusLabel = 'Descongelado';
-    if (isFrozen) {
+    if (isMigrationError) {
+      badgeClass = 'status-error';
+      statusIcon = 'icon-alert-triangle';
+      statusLabel = `Falha na migração p/ Área Segura 2: ${escapeHtml(status.replace('MIGRACAO2:ERRO:', '').trim())}`;
+    } else if (isMigrating) {
+      badgeClass = 'status-pending';
+      statusIcon = 'icon-hourglass';
+      statusLabel = 'Migrando para o Área Segura 2...';
+    } else if (isMigrated) {
+      badgeClass = 'status-frozen';
+      statusIcon = 'icon-check-circle';
+      statusLabel = 'Migrado para o Área Segura 2 - aguardando reiniciar';
+    } else if (isFrozen) {
       badgeClass = 'status-frozen';
       statusIcon = 'icon-snowflake';
       statusLabel = 'Protegido (Congelado)';
