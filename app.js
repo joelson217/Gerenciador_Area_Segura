@@ -797,13 +797,14 @@ function renderMachineList() {
     const isFrozen = status === 'CONGELADO';
     const isPending = status === 'PENDENTE';
     const isUnavailable = status === 'INDISPONIVEL';
-    // Vem do Instalar2.exe -Silent (migração remota pro Área Segura 2) - sem
-    // isso, se a migração travasse em algum passo no meio do caminho, a
-    // máquina simplesmente continuava mostrando o status antigo pra sempre,
-    // sem nenhuma pista do que aconteceu (ver Sync-MigrationStatus).
-    const isMigrating = status.startsWith('MIGRACAO2:EM ANDAMENTO');
-    const isMigrated = status.startsWith('MIGRACAO2:CONCLUIDA');
+    // Vem do AreaSegura.ps1 (agente antigo, ao receber o comando) e depois do
+    // Instalar2.exe -Silent (que assume a partir de "iniciando instalador") -
+    // reporta cada etapa da migração pro Gerenciador, exatamente pra não
+    // ficar cega em qual passo travou (ver Sync-StatusToCloud/MIGRATE2 no
+    // AreaSegura.ps1 e Sync-MigrationStatus no Instalar2.ps1).
     const isMigrationError = status.startsWith('MIGRACAO2:ERRO');
+    const isMigrated = status.startsWith('MIGRACAO2:CONCLUIDA');
+    const isMigrating = status.startsWith('MIGRACAO2:') && !isMigrationError && !isMigrated;
 
     let badgeClass = 'status-thawed';
     let statusIcon = 'icon-flame';
@@ -811,11 +812,11 @@ function renderMachineList() {
     if (isMigrationError) {
       badgeClass = 'status-error';
       statusIcon = 'icon-alert-triangle';
-      statusLabel = `Falha na migração p/ Área Segura 2: ${escapeHtml(status.replace('MIGRACAO2:ERRO:', '').trim())}`;
+      statusLabel = `Falha na migração p/ Área Segura 2: ${escapeHtml(status.replace('MIGRACAO2:', '').trim())}`;
     } else if (isMigrating) {
       badgeClass = 'status-pending';
       statusIcon = 'icon-hourglass';
-      statusLabel = 'Migrando para o Área Segura 2...';
+      statusLabel = `Migrando p/ Área Segura 2: ${escapeHtml(status.replace('MIGRACAO2:', '').trim())}`;
     } else if (isMigrated) {
       badgeClass = 'status-frozen';
       statusIcon = 'icon-check-circle';
