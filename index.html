@@ -283,6 +283,7 @@
             <button class="action-btn freeze" onclick="freezeSelected()"><svg class="icon"><use href="#icon-snowflake"/></svg> Congelar</button>
             <button class="action-btn thaw" onclick="thawSelected()"><svg class="icon"><use href="#icon-flame"/></svg> Descongelar</button>
             <button class="action-btn renew" onclick="showRenewModal()"><svg class="icon"><use href="#icon-key"/></svg> Renovar</button>
+            <button class="action-btn" onclick="startSyncWatchManual()"><svg class="icon"><use href="#icon-cloud"/></svg> Rastrear Confirmações</button>
             <button class="action-btn revoke" onclick="revokeSelected()"><svg class="icon"><use href="#icon-ban"/></svg> Revogar</button>
             <button class="action-btn update" onclick="showUpdateModal()"><svg class="icon"><use href="#icon-refresh"/></svg> Atualizar</button>
             <button class="action-btn uninstall" onclick="uninstallSelected()"><svg class="icon"><use href="#icon-zap"/></svg> Desinstalar</button>
@@ -307,6 +308,9 @@
           </label>
           <span class="select-count" id="select-count">0 selecionada(s)</span>
         </div>
+
+        <!-- Resumo do rastreio de confirmação (aparece só quando há rastreio ativo) -->
+        <div id="sync-watch-summary" style="display:none;"></div>
 
         <!-- Lista de Máquinas -->
         <div id="machines-list"></div>
@@ -374,7 +378,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Versão do Gerenciador:</span>
-              <span class="info-value-highlight" id="app-version-display">v2.5.3 Pro Enterprise</span>
+              <span class="info-value-highlight" id="app-version-display">v2.5.4 Pro Enterprise</span>
             </div>
             <div class="info-row">
               <span class="info-label">Criptografia de Licenças:</span>

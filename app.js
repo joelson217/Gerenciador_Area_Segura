@@ -645,6 +645,8 @@ function renderMachineList() {
     return;
   }
 
+  const syncWatch = getSyncWatch();
+
   machines.forEach(m => {
     const cloud = cloudStatuses[m.HardwareID] || {};
     const status = cloud.status_protecao || 'DESCONHECIDO';
@@ -669,6 +671,12 @@ function renderMachineList() {
       statusLabel = 'Proteção Indisponível (edição do Windows)';
     }
 
+    const syncState = isSyncConfirmed(m.HardwareID, syncWatch);
+    const syncBadge = syncState === null ? '' :
+      syncState
+        ? `<span class="machine-status-badge status-frozen"><svg class="icon"><use href="#icon-check-circle"/></svg> Confirmou</span>`
+        : `<span class="machine-status-badge status-pending"><svg class="icon"><use href="#icon-hourglass"/></svg> Aguardando</span>`;
+
     const card = document.createElement('div');
     card.className = 'machine-card';
     card.innerHTML = `
@@ -677,7 +685,10 @@ function renderMachineList() {
           <input type="checkbox" class="machine-checkbox" data-hwid="${escapeHtml(m.HardwareID)}" onchange="updateSelectCount()" ${previouslySelected.has(m.HardwareID) ? 'checked' : ''}>
           <span class="machine-card-title">${escapeHtml(m.NomeExibicao || m.HardwareID)}</span>
         </div>
-        <span class="machine-status-badge ${badgeClass}"><svg class="icon"><use href="#${statusIcon}"/></svg> ${statusLabel}</span>
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+          <span class="machine-status-badge ${badgeClass}"><svg class="icon"><use href="#${statusIcon}"/></svg> ${statusLabel}</span>
+          ${syncBadge}
+        </div>
       </div>
       <div class="machine-card-body">
         <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
@@ -695,6 +706,7 @@ function renderMachineList() {
   });
 
   updateSelectCount();
+  renderSyncWatchStatus();
 }
 
 function getSelectedHwIds() {
@@ -851,6 +863,12 @@ async function showRenewModal() {
   const expDate = await showPromptModal('Digite a nova data de validade da licença (AAAA-MM-DD):', '2027-08-15', 'Renovar Licença');
   if (expDate && /^\d{4}-\d{2}-\d{2}$/.test(expDate)) {
     const cleanDate = expDate;
+
+    // Guarda o "antes" de cada máquina (última sincronização atual) pra depois
+    // saber quais já se conectaram e pegaram a validade nova, e quais ainda
+    // não ligaram/não têm internet - ver renderSyncWatchStatus().
+    startSyncWatch(selected);
+
     selected.forEach(async hwId => {
       const chave = await getActivationKey(hwId, cleanDate); // já persiste a licença no servidor
 
@@ -868,6 +886,91 @@ async function showRenewModal() {
     showToast(`Licenças renovadas até ${cleanDate}!`, 'success');
     renderMachineList();
   }
+}
+
+// ============================================
+// RASTREIO DE CONFIRMAÇÃO (quem já ligou/conectou e recebeu o comando)
+// ------------------------------------------------------------------
+// O servidor aplica a mudança (renovação, congelar, etc.) na hora, mas cada
+// máquina só "sabe" disso na próxima vez que ligar e conectar - não dá pra
+// saber isso olhando só a data gravada no servidor (ela já mudou pra todas,
+// ligadas ou não). O sinal real é "ultima_sincronizacao" avançar: se esse
+// horário mudou depois que a gente marcou o início do rastreio, é porque a
+// máquina ligou, conectou e falou com o servidor de novo nesse meio tempo.
+// Guardado no localStorage (só neste navegador) porque é só um apoio visual
+// pro admin acompanhar, não faz parte do controle de verdade das máquinas.
+// ============================================
+const SYNC_WATCH_KEY = 'areaSeguraSyncWatch';
+
+function getSyncWatch() {
+  try { return JSON.parse(localStorage.getItem(SYNC_WATCH_KEY) || 'null'); } catch (e) { return null; }
+}
+
+function saveSyncWatch(watch) {
+  try { localStorage.setItem(SYNC_WATCH_KEY, JSON.stringify(watch)); } catch (e) {}
+}
+
+function clearSyncWatch() {
+  try { localStorage.removeItem(SYNC_WATCH_KEY); } catch (e) {}
+  renderSyncWatchStatus();
+}
+
+function startSyncWatch(hwIds) {
+  const baseline = {};
+  hwIds.forEach(hwId => {
+    baseline[hwId] = (cloudStatuses[hwId] && cloudStatuses[hwId].ultima_sincronizacao) || null;
+  });
+  saveSyncWatch({ startedAt: new Date().toISOString(), baseline });
+  renderSyncWatchStatus();
+}
+
+// Botão manual: começa (ou reinicia) o rastreio pras máquinas selecionadas,
+// ou pra todas do cliente atual se nada estiver marcado - útil pra rastrear
+// uma mudança que já foi feita antes de existir esse recurso.
+function startSyncWatchManual() {
+  let hwIds = getSelectedHwIds();
+  if (hwIds.length === 0) {
+    if (!selectedClient || !(selectedClient.Maquinas || []).length) {
+      showToast('Nenhuma máquina neste cliente para rastrear.', 'warning');
+      return;
+    }
+    hwIds = selectedClient.Maquinas.map(m => m.HardwareID);
+  }
+  startSyncWatch(hwIds);
+  showToast(`Rastreando confirmação em ${hwIds.length} máquina(s). Vá ligando/conectando as máquinas e acompanhe aqui.`, 'success');
+}
+
+function isSyncConfirmed(hwId, watch) {
+  if (!watch || !(hwId in watch.baseline)) return null; // não está sendo rastreada
+  const current = (cloudStatuses[hwId] && cloudStatuses[hwId].ultima_sincronizacao) || null;
+  if (!current) return false;
+  return current !== watch.baseline[hwId];
+}
+
+function renderSyncWatchStatus() {
+  const box = document.getElementById('sync-watch-summary');
+  if (!box) return;
+  const watch = getSyncWatch();
+  if (!watch || !selectedClient) { box.style.display = 'none'; return; }
+
+  const hwIds = Object.keys(watch.baseline).filter(id =>
+    (selectedClient.Maquinas || []).some(m => m.HardwareID === id)
+  );
+  if (hwIds.length === 0) { box.style.display = 'none'; return; }
+
+  const confirmed = hwIds.filter(id => isSyncConfirmed(id, watch)).length;
+  const pending = hwIds.length - confirmed;
+
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div class="sync-watch-box">
+      <span><svg class="icon"><use href="#icon-cloud"/></svg>
+        Rastreio ativo: <strong>${confirmed} de ${hwIds.length}</strong> máquina(s) já confirmaram (ligaram e conectaram)
+        - <strong>${pending}</strong> ainda esperando ligar/conectar na internet.
+      </span>
+      <button class="btn-small-action" onclick="clearSyncWatch()">Encerrar rastreio</button>
+    </div>
+  `;
 }
 
 async function showUpdateModal() {
