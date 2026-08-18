@@ -746,6 +746,10 @@ function updateMachineName(hwId, value) {
   maq.NomeExibicao = clean || hwId;
   saveDB();
   renderMachineList();
+
+  // Manda pro servidor também - é o que o Área Segura instalado no PC lê no
+  // check-in pra mostrar o mesmo nome no painel dele (ver handleSetName).
+  callLicenseApi('set-name', { hardware_id: hwId, nome_maquina: clean, admin_token: getAdminToken() });
 }
 
 function toggleSelectAll(checked) {
