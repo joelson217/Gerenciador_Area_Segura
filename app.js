@@ -757,6 +757,28 @@ function renderMachines() {
   renderMachineList();
 }
 
+// O agente v1 avisa o servidor a cada ~5s enquanto está rodando (ver o timer
+// de fundo no AreaSegura.ps1) - então 3 minutos sem notícia já é um sinal
+// forte de que ele não está mais respondendo (computador desligado, sem
+// internet, ou o programa não existe mais na máquina). Sem isso, o card só
+// repetia o último status conhecido pra sempre - podia dizer "Congelado,
+// Protegido" de uma máquina que na verdade não tem mais nada rodando.
+const MACHINE_STALE_MS = 3 * 60 * 1000;
+
+function formatRelativeTime(iso) {
+  if (!iso) return null;
+  const then = new Date(iso);
+  if (isNaN(then.getTime())) return null;
+  const diffMs = Date.now() - then.getTime();
+  if (diffMs < 60000) return 'agora mesmo';
+  const m = Math.floor(diffMs / 60000);
+  if (m < 60) return `há ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `há ${h}h`;
+  const d = Math.floor(h / 24);
+  return `há ${d} dia${d > 1 ? 's' : ''}`;
+}
+
 function renderMachineList() {
   const container = document.getElementById('machines-list');
   if (!container || !selectedClient) return;
@@ -808,6 +830,13 @@ function renderMachineList() {
     // Mesma lógica pro comando "Atualizar Executável" - antes uma falha aqui
     // (rede, antivírus segurando o arquivo) não aparecia em lugar nenhum.
     const isUpdateError = status.startsWith('ATUALIZACAO_ERRO');
+    // "Sem contato" pesa mais que o status congelado/descongelado antigo -
+    // ver MACHINE_STALE_MS acima. Não se aplica a uma migração concluída:
+    // depois que uma máquina migra pro Área Segura 2 com sucesso, é normal
+    // e esperado ela nunca mais falar com este sistema antigo de novo.
+    const lastSyncIso = cloud.ultima_sincronizacao || null;
+    const lastSyncMs = lastSyncIso ? new Date(lastSyncIso).getTime() : NaN;
+    const isStale = !isMigrated && !isNaN(lastSyncMs) && (Date.now() - lastSyncMs) > MACHINE_STALE_MS;
 
     let badgeClass = 'status-thawed';
     let statusIcon = 'icon-flame';
@@ -828,6 +857,10 @@ function renderMachineList() {
       badgeClass = 'status-frozen';
       statusIcon = 'icon-check-circle';
       statusLabel = 'Migrado para o Área Segura 2 - aguardando reiniciar';
+    } else if (isStale) {
+      badgeClass = 'status-error';
+      statusIcon = 'icon-alert-triangle';
+      statusLabel = `Sem contato ${formatRelativeTime(lastSyncIso)} - status pode estar desatualizado`;
     } else if (isFrozen) {
       badgeClass = 'status-frozen';
       statusIcon = 'icon-snowflake';
@@ -890,7 +923,7 @@ function renderMachineList() {
         ${cloud.pasta_persistente && cloud.pasta_persistente !== 'Nenhuma' ? `<div><strong>Pasta Persistente:</strong> ${escapeHtml(cloud.pasta_persistente)}</div>` : ''}
       </div>
       <div class="machine-card-footer">
-        <span>Última Sinc: ${cloud.ultima_sincronizacao || 'Sem dados recentes'}</span>
+        <span title="${escapeHtml(cloud.ultima_sincronizacao || '')}">Último contato: ${cloud.ultima_sincronizacao ? escapeHtml(formatRelativeTime(cloud.ultima_sincronizacao)) : 'Sem dados recentes'}</span>
         <button class="btn-small-action" onclick="copyMachineKey('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-copy"/></svg> Copiar Chave</button>
         <button class="btn-small-action" onclick="showMachineKeyQr('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-qr-code"/></svg> QR</button>
       </div>
