@@ -823,7 +823,18 @@ function renderMachineList() {
 
   machines.forEach(m => {
     const cloud = cloudStatuses[m.HardwareID] || {};
-    const v2Machine = window.__v2MachinesByHwId?.[m.HardwareID] || null;
+    const v2MachineRaw = window.__v2MachinesByHwId?.[m.HardwareID] || null;
+
+    // "V2 existe" não quer dizer "V2 é quem está rodando agora" - se a
+    // máquina foi reinstalada com o Área Segura antigo depois de uma
+    // tentativa de migração anterior (com ou sem sucesso), o registro v2
+    // pode ser um resto velho enquanto o v1 está de novo vivo e mandando
+    // notícia fresca. Decide pelo que falou com o servidor por ÚLTIMO, não
+    // por "qual tabela tem uma linha" - senão o card fica preso mostrando
+    // um fantasma de uma tentativa antiga e escondendo o progresso real.
+    const v1LastSyncMs = cloud.ultima_sincronizacao ? new Date(cloud.ultima_sincronizacao).getTime() : NaN;
+    const v2LastSyncMsRaw = v2MachineRaw?.ultima_sincronizacao ? new Date(v2MachineRaw.ultima_sincronizacao).getTime() : NaN;
+    const v2Machine = (v2MachineRaw && (isNaN(v1LastSyncMs) || (!isNaN(v2LastSyncMsRaw) && v2LastSyncMsRaw >= v1LastSyncMs))) ? v2MachineRaw : null;
 
     let badgeClass, statusIcon, statusLabel;
 
