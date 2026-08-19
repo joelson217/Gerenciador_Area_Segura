@@ -1282,10 +1282,22 @@ function clearSyncWatch() {
   renderSyncWatchStatus();
 }
 
+// Mesma máquina pode estar reportando por dois lugares diferentes (tabela
+// antiga via cloudStatuses, tabela nova via __v2MachinesByHwId) - olhar
+// sempre o de v1 aqui fazia o rastreio nunca "confirmar" numa máquina já
+// migrada pro Área Segura 2, porque ela parou de gravar na tabela antiga há
+// tempos (ficava "aguardando" pra sempre mesmo com o comando já aplicado).
+function getLastSyncIso(hwId) {
+  if (isV2Machine(hwId)) {
+    return window.__v2MachinesByHwId?.[hwId]?.ultima_sincronizacao || null;
+  }
+  return (cloudStatuses[hwId] && cloudStatuses[hwId].ultima_sincronizacao) || null;
+}
+
 function startSyncWatch(hwIds) {
   const baseline = {};
   hwIds.forEach(hwId => {
-    baseline[hwId] = (cloudStatuses[hwId] && cloudStatuses[hwId].ultima_sincronizacao) || null;
+    baseline[hwId] = getLastSyncIso(hwId);
   });
   saveSyncWatch({ startedAt: new Date().toISOString(), baseline });
   renderSyncWatchStatus();
@@ -1309,7 +1321,7 @@ function startSyncWatchManual() {
 
 function isSyncConfirmed(hwId, watch) {
   if (!watch || !(hwId in watch.baseline)) return null; // não está sendo rastreada
-  const current = (cloudStatuses[hwId] && cloudStatuses[hwId].ultima_sincronizacao) || null;
+  const current = getLastSyncIso(hwId);
   if (!current) return false;
   return current !== watch.baseline[hwId];
 }
