@@ -895,10 +895,17 @@ function renderMachineList() {
         badgeClass = 'status-pending';
         statusIcon = 'icon-hourglass';
         statusLabel = `Atualizando Área Segura 2: ${escapeHtml(v2Status.replace('ATUALIZANDO2:', '').trim())}`;
+      } else if (v2Status === 'DESCONGELADO') {
+        // Cor diferente do "Protegido" de propósito - descongelado precisa
+        // saltar aos olhos igual já acontece pro Área Segura antigo, senão
+        // parece que está tudo protegido igual quando na verdade não está.
+        badgeClass = 'status-thawed';
+        statusIcon = 'icon-flame';
+        statusLabel = 'Área Segura 2 - Descongelado';
       } else {
         badgeClass = 'status-v2';
         statusIcon = 'icon-check-circle';
-        statusLabel = `Área Segura 2 - ${v2Status === 'DESCONGELADO' ? 'Descongelado' : escapeHtml(v2Status)}`;
+        statusLabel = `Área Segura 2 - ${escapeHtml(v2Status)}`;
       }
     } else {
 
