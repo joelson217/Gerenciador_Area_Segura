@@ -255,7 +255,16 @@ async function sendSupabaseCommand(hwId, cmd) {
 // Desinstalar/Atualizar/Migrar) pra dar um retorno preciso, não genérico.
 async function sendCommandToSelected(selected, cmd, successMsgFn) {
   startSyncWatch(selected);
-  const results = await Promise.all(selected.map(hwId => sendSupabaseCommand(hwId, cmd)));
+  // Em lotes pequenos, não tudo de uma vez - com dezenas de máquinas
+  // selecionadas, disparar tudo junto sobrecarregava a Edge Function e
+  // fazia boa parte das chamadas falhar (visto primeiro na renovação de
+  // licença em lote, mesmo problema aqui).
+  const BATCH_SIZE = 6;
+  const results = [];
+  for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+    const batch = selected.slice(i, i + BATCH_SIZE);
+    results.push(...await Promise.all(batch.map(hwId => sendSupabaseCommand(hwId, cmd))));
+  }
   const okCount = results.filter(Boolean).length;
   const failCount = results.length - okCount;
   if (okCount > 0) { showToast(successMsgFn(okCount), 'success'); }
@@ -1194,23 +1203,36 @@ async function showRenewModal() {
     // não ligaram/não têm internet - ver renderSyncWatchStatus().
     startSyncWatch(selected);
 
-    // Promise.all (não forEach) - com forEach, o saveDB() de baixo rodava
-    // ANTES das chaves terminarem de voltar do servidor, salvando o banco
-    // sem a validade nova ainda escrita nas máquinas.
-    await Promise.all(selected.map(async hwId => {
-      const chave = await getActivationKey(hwId, cleanDate); // já persiste a licença no servidor
+    // Manda em lotes pequenos (não todas de uma vez) - com 36+ máquinas
+    // selecionadas, disparar tudo junto (Promise.all sem limite) sobrecarrega
+    // a Edge Function e boa parte das chamadas falhava silenciosamente: o
+    // código sempre mostrava "Licenças renovadas!" no final, mesmo quando só
+    // 1 ou 2 máquinas realmente tinham recebido a validade nova, porque não
+    // conferia se cada chamada individual deu certo. Agora conta de verdade.
+    const BATCH_SIZE = 6;
+    let okCount = 0;
+    let failCount = 0;
+    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+      const batch = selected.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async hwId => {
+        const chave = await getActivationKey(hwId, cleanDate); // já persiste a licença no servidor
+        if (!chave) { failCount++; return; }
+        okCount++;
 
-      // Atualizar local
-      if (selectedClient && selectedClient.Maquinas) {
-        const maq = selectedClient.Maquinas.find(m => m.HardwareID === hwId);
-        if (maq) {
-          maq.DataExpiracao = cleanDate;
-          maq.ChaveGerada = chave;
+        // Atualizar local
+        if (selectedClient && selectedClient.Maquinas) {
+          const maq = selectedClient.Maquinas.find(m => m.HardwareID === hwId);
+          if (maq) {
+            maq.DataExpiracao = cleanDate;
+            maq.ChaveGerada = chave;
+          }
         }
-      }
-    }));
+      }));
+    }
 
-    if (await saveDB()) { showToast(`Licenças renovadas até ${cleanDate}!`, 'success'); }
+    await saveDB();
+    if (okCount > 0) { showToast(`Licença renovada até ${cleanDate} em ${okCount} máquina(s)!`, 'success'); }
+    if (failCount > 0) { showToast(`Falha ao renovar ${failCount} máquina(s) - confira o token e a conexão, e tente de novo nelas.`, 'error'); }
     renderMachineList();
   }
 }
