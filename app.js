@@ -1747,10 +1747,14 @@ async function triggerBiometricAuth() {
     const challenge = new Uint8Array(32);
     window.crypto.getRandomValues(challenge);
 
+    // 5s (não 60s): se o rosto não aparecer logo, desiste sozinho e mostra
+    // o que fazer em seguida, em vez de deixar o Windows Hello esperando
+    // por até um minuto inteiro sem dar nenhuma pista de que dá pra digitar
+    // o PIN em vez de continuar tentando o rosto.
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge: challenge,
-        timeout: 60000,
+        timeout: 5000,
         userVerification: 'required'
       }
     });
@@ -1762,6 +1766,10 @@ async function triggerBiometricAuth() {
     }
   } catch (e) {
     console.log('Biometria cancelada ou não reconhecida.');
+    if (lockScreenMode === 'unlock') {
+      const msgEl = document.getElementById('lock-message');
+      if (msgEl) msgEl.textContent = 'Não reconheci seu rosto. Toque no ícone pra tentar de novo, ou digite seu PIN.';
+    }
   }
 }
 
