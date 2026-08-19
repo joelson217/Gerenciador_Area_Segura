@@ -887,6 +887,14 @@ function renderMachineList() {
         badgeClass = 'status-pending';
         statusIcon = 'icon-hourglass';
         statusLabel = 'Área Segura 2 - Pendente de Ativação';
+      } else if (v2Status.startsWith('ATUALIZACAO_ERRO')) {
+        badgeClass = 'status-error';
+        statusIcon = 'icon-alert-triangle';
+        statusLabel = `Falha ao atualizar o Área Segura 2: ${escapeHtml(v2Status.replace('ATUALIZACAO_ERRO:', '').trim())}`;
+      } else if (v2Status.startsWith('ATUALIZANDO2:')) {
+        badgeClass = 'status-pending';
+        statusIcon = 'icon-hourglass';
+        statusLabel = `Atualizando Área Segura 2: ${escapeHtml(v2Status.replace('ATUALIZANDO2:', '').trim())}`;
       } else {
         badgeClass = 'status-v2';
         statusIcon = 'icon-check-circle';
@@ -1384,6 +1392,27 @@ async function showMigrateModal() {
 
   const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
   await sendCommandToSelected(selected, `MIGRATE2|${zipUrl}`, n => `Comando de migração enviado para ${n} máquina(s) - aplica assim que cada uma se conectar.`);
+  refreshAll();
+}
+
+// Atualiza o Área Segura 2 já instalado (não migração - a máquina já é v2).
+// Antes disso não existia jeito nenhum de corrigir um bug já instalado sem
+// reinstalar fisicamente; agora reaproveita o mesmo pacote/instalador da
+// migração (UPDATE2, que o AreaSeguraService.exe 1.19+ sabe processar),
+// que preserva senha/estado da máquina em vez de resetar pro padrão.
+async function showUpdateV2Modal() {
+  const selected = getSelectedHwIds();
+  if (selected.length === 0) {
+    showToast('Selecione pelo menos uma máquina para atualizar.', 'warning');
+    return;
+  }
+  const aviso = selected.length === 1
+    ? 'Isso vai atualizar o Área Segura 2 já instalado nesta máquina para a versão mais recente, mantendo senha e proteção como estão. Ela vai reiniciar sozinha ao final. Confirma?'
+    : `Isso vai atualizar o Área Segura 2 em ${selected.length} máquinas para a versão mais recente, mantendo senha e proteção como estão. Todas vão reiniciar sozinhas ao final. Confirma?`;
+  if (!(await showConfirmModal(aviso, 'Atualizar Área Segura 2'))) return;
+
+  const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
+  await sendCommandToSelected(selected, `UPDATE2|${zipUrl}`, n => `Comando de atualização enviado para ${n} máquina(s) - aplica assim que cada uma se conectar.`);
   refreshAll();
 }
 
