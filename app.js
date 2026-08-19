@@ -226,7 +226,8 @@ let pinLockoutTimer = null;
 // A chave de ativação agora é gerada e assinada no servidor — o segredo
 // nunca chega ao navegador. Chamar isto também persiste a licença no banco.
 async function getActivationKey(hardwareId, expirationDate) {
-  const result = await callLicenseApi('activate', {
+  const api = isV2Machine(hardwareId) ? callLicenseApiV2 : callLicenseApi;
+  const result = await api('activate', {
     hardware_id: hardwareId,
     expiration_date: expirationDate,
     admin_token: getAdminToken()
@@ -242,11 +243,28 @@ async function fetchCloudStatuses() {
   (result.statuses || []).forEach(r => { cloudStatuses[r.hardware_id] = r; });
 }
 
+// Decide se uma máquina já está rodando o Área Segura 2 - mesma regra de
+// "quem falou com o servidor por último" usada no card da lista
+// (renderMachineList). Comandos (Congelar/Descongelar/Revogar/Desinstalar)
+// e renovação de licença têm que ir pro backend certo: uma máquina já
+// migrada só lê comando_remoto/chave da tabela nova (licencas2, via
+// license-api-v2) - mandar pra tabela antiga (licencas) nunca chegava nela,
+// mesmo a chamada "dando certo" e mostrando "enviado!" no Gerenciador.
+function isV2Machine(hwId) {
+  const v2Raw = window.__v2MachinesByHwId?.[hwId] || null;
+  if (!v2Raw) return false;
+  const cloud = cloudStatuses[hwId] || {};
+  const v1LastSyncMs = cloud.ultima_sincronizacao ? new Date(cloud.ultima_sincronizacao).getTime() : NaN;
+  const v2LastSyncMs = v2Raw.ultima_sincronizacao ? new Date(v2Raw.ultima_sincronizacao).getTime() : NaN;
+  return isNaN(v1LastSyncMs) || (!isNaN(v2LastSyncMs) && v2LastSyncMs >= v1LastSyncMs);
+}
+
 // Retorna true/false - quem chama usa isso pra contar quantas máquinas
 // realmente receberam o comando, em vez de sempre dizer "enviado!" mesmo
 // quando a chamada falhou (token errado, offline etc.) sem avisar ninguém.
 async function sendSupabaseCommand(hwId, cmd) {
-  const result = await callLicenseApi('command', { hardware_id: hwId, comando: cmd, admin_token: getAdminToken() });
+  const api = isV2Machine(hwId) ? callLicenseApiV2 : callLicenseApi;
+  const result = await api('command', { hardware_id: hwId, comando: cmd, admin_token: getAdminToken() });
   return !result.error;
 }
 
