@@ -1012,8 +1012,21 @@ function renderMachineList() {
           return `<button class="btn-small-action" onclick="startEditName('${escapeHtml(hwId)}')"><svg class="icon"><use href="#icon-pencil"/></svg> Adicionar nome/número</button>`;
         })()}
       </div>
+      ${v2Machine ? `
+      <div class="machine-category-row" style="margin:8px 0; display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--text-secondary);">
+        <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+          <input type="checkbox" ${v2Machine.block_instaladores !== false ? 'checked' : ''} onchange="setMachineCategory('${escapeHtml(m.HardwareID)}', 'INSTALADORES', this)"> Instalação de programas
+        </label>
+        <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+          <input type="checkbox" ${v2Machine.block_adulto !== false ? 'checked' : ''} onchange="setMachineCategory('${escapeHtml(m.HardwareID)}', 'ADULTO', this)"> Sites adultos
+        </label>
+        <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+          <input type="checkbox" ${v2Machine.block_jogos !== false ? 'checked' : ''} onchange="setMachineCategory('${escapeHtml(m.HardwareID)}', 'JOGOS', this)"> Jogos
+        </label>
+      </div>` : ''}
       <div class="machine-card-body">
         <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
+        ${v2Machine && v2Machine.hostname ? `<div><strong>Nome do Windows:</strong> ${escapeHtml(v2Machine.hostname)}</div>` : ''}
         <div><strong>Ambiente:</strong> ${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
         <div><strong>Validade:</strong> ${(!m.DataExpiracao || m.DataExpiracao === '1970-01-01') ? 'Aguardando autorização (ainda não ativada)' : m.DataExpiracao}</div>
         ${cloud.pasta_persistente && cloud.pasta_persistente !== 'Nenhuma' ? `<div><strong>Pasta Persistente:</strong> ${escapeHtml(cloud.pasta_persistente)}</div>` : ''}
@@ -1022,6 +1035,7 @@ function renderMachineList() {
         <span title="${escapeHtml(cloud.ultima_sincronizacao || '')}">Último contato: ${cloud.ultima_sincronizacao ? escapeHtml(formatRelativeTime(cloud.ultima_sincronizacao)) : 'Sem dados recentes'}</span>
         <button class="btn-small-action" onclick="copyMachineKey('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-copy"/></svg> Copiar Chave</button>
         <button class="btn-small-action" onclick="showMachineKeyQr('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-qr-code"/></svg> QR</button>
+        ${v2Machine ? `<button class="btn-small-action" onclick="identifyMachine('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-monitor"/></svg> Identificar</button>` : ''}
       </div>
     `;
     container.appendChild(card);
@@ -1373,7 +1387,17 @@ function renderSyncWatchStatus() {
 // versão nova for publicada - sem isso, mandar "Atualizar" de novo pra
 // pegar quem ainda não recebeu reiniciaria TAMBÉM quem já está certo.
 const AREA_SEGURA_V1_VERSION = '2.7.0';
+// NÃO bumpar isto até o Joelson confirmar, na máquina de teste, que a
+// versão beta (categorias/descongelar restrito/identificar) está tudo certo
+// - só depois disso o build vira "estável" de verdade e este número sobe
+// pra igualar o AREA_SEGURA_V2_BETA_VERSION, liberando o "Atualizar" em
+// massa pras 44 máquinas. Até lá, continua sendo o build antigo (1.21.0),
+// sem essas novidades ainda.
 const AREA_SEGURA_V2_VERSION = '1.21.0';
+// Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
+// estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
+// "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
+const AREA_SEGURA_V2_BETA_VERSION = '1.22.0';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
@@ -1389,24 +1413,27 @@ async function showUpdateModal() {
   }
 }
 
-// Migração remota pro Área Segura 2 (arquitetura nova: serviço SYSTEM +
-// painel sem admin). Reaproveita o mesmo canal de comando remoto que já
-// existe (UPDATE/FREEZE/etc.) - só manda um comando novo, MIGRATE2, que o
-// AreaSegura.exe (v1, já rodando nessas máquinas) sabe processar a partir
-// da versão 2.3.0. A própria máquina baixa o pacote e troca sozinha.
-async function showMigrateModal() {
+// Testar uma versão em andamento (beta) numa ÚNICA máquina, depois que ela
+// já foi atualizada normalmente pelo botão "Atualizar Área Segura 2" - fluxo
+// pedido pelo Joelson pra validar uma correção nova numa máquina de teste
+// antes de mandar pra todo mundo. Reaproveita o mesmo canal UPDATE2 de
+// sempre, só que apontando pro pacote/versão beta (sempre um número acima da
+// estável, ver AREA_SEGURA_V2_BETA_VERSION) em vez do estável.
+// Antes desta função existia MIGRATE2 (migração do Área Segura antigo pro
+// Área Segura 2) - não faz mais sentido hoje porque todas as máquinas já
+// foram migradas e o Área Segura antigo não é mais instalado em lugar
+// nenhum.
+async function showTestVersionModal() {
   const selected = getSelectedHwIds();
-  if (selected.length === 0) {
-    showToast('Selecione pelo menos uma máquina para migrar.', 'warning');
+  if (selected.length !== 1) {
+    showToast('Selecione exatamente 1 máquina para testar uma versão em andamento - essa função é pra validar numa máquina só antes de mandar pra todo mundo.', 'warning');
     return;
   }
-  const aviso = selected.length === 1
-    ? 'Isso vai REMOVER o Área Segura antigo desta máquina e instalar o Área Segura 2 (novo, sem precisar de conta administrador) automaticamente, sem ninguém precisar tocar no computador. Ela vai reiniciar sozinha ao final. Só funciona com a máquina JÁ ligada e com internet nesse momento (o comando é aplicado no próximo contato dela com a nuvem). Confirma?'
-    : `Isso vai REMOVER o Área Segura antigo e instalar o Área Segura 2 em ${selected.length} máquinas, automaticamente, sem ninguém precisar tocar nelas - todas vão reiniciar sozinhas ao final. Confirma migrar TODAS as ${selected.length} selecionadas agora?`;
-  if (!(await showConfirmModal(aviso, 'Migrar para Área Segura 2'))) return;
+  const aviso = 'Isso vai instalar a versão de TESTE (beta) do Área Segura 2 nesta máquina, mantendo senha e proteção como estão. Ela vai reiniciar sozinha ao final. Use só na sua máquina de teste, depois de já ter atualizado ela normalmente. Confirma?';
+  if (!(await showConfirmModal(aviso, 'Testar Versão (Beta)'))) return;
 
-  const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
-  await sendCommandToSelected(selected, `MIGRATE2|${zipUrl}`, n => `Comando de migração enviado para ${n} máquina(s) - aplica assim que cada uma se conectar.`);
+  const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2-beta.zip';
+  await sendCommandToSelected(selected, `UPDATE2|${AREA_SEGURA_V2_BETA_VERSION}|${zipUrl}`, n => `Comando de teste enviado - a máquina vai instalar a versão beta assim que se conectar.`);
   refreshAll();
 }
 
@@ -1429,6 +1456,35 @@ async function showUpdateV2Modal() {
   const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
   await sendCommandToSelected(selected, `UPDATE2|${AREA_SEGURA_V2_VERSION}|${zipUrl}`, n => `Comando de atualização enviado para ${n} máquina(s) - quem já estiver na v${AREA_SEGURA_V2_VERSION} não reinicia à toa.`);
   refreshAll();
+}
+
+// Liga/desliga uma categoria de bloqueio (Jogos/Sites adultos/Instalação de
+// programas) numa máquina v2 na hora, sem descongelar a máquina inteira nem
+// reiniciar - ver comando SETCAT em AreaSeguraService.ps1.
+async function setMachineCategory(hwId, categoria, checkboxEl) {
+  const ligado = checkboxEl.checked;
+  checkboxEl.disabled = true;
+  const ok = await sendSupabaseCommand(hwId, `SETCAT|${categoria}|${ligado ? '1' : '0'}`);
+  checkboxEl.disabled = false;
+  if (!ok) {
+    checkboxEl.checked = !ligado;
+    showToast('Não consegui avisar a máquina agora - confira a conexão e tente de novo.', 'error');
+    return;
+  }
+  showToast('Categoria atualizada!', 'success');
+  refreshAll();
+}
+
+// Pede pra máquina mostrar um aviso em tela cheia por alguns segundos - jeito
+// de reconhecer fisicamente qual computador do laboratório é este card, sem
+// precisar visitar cada máquina e ler o ID pela tecla de atalho.
+async function identifyMachine(hwId) {
+  const ok = await sendSupabaseCommand(hwId, 'IDENTIFY');
+  if (ok) {
+    showToast('Comando enviado - a tela dessa máquina vai piscar um aviso em poucos segundos (se ela estiver ligada e conectada).', 'success');
+  } else {
+    showToast('Não consegui avisar a máquina agora - confira a conexão e tente de novo.', 'error');
+  }
 }
 
 async function showAddMachineModal() {
