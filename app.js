@@ -1433,7 +1433,9 @@ async function showTestVersionModal() {
   if (!(await showConfirmModal(aviso, 'Testar Versão (Beta)'))) return;
 
   const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2-beta.zip';
-  await sendCommandToSelected(selected, `UPDATE2|${AREA_SEGURA_V2_BETA_VERSION}|${zipUrl}`, n => `Comando de teste enviado - a máquina vai instalar a versão beta assim que se conectar.`);
+  // Mesmo motivo do showUpdateV2Modal logo acima: sem versão no comando,
+  // por enquanto, pra funcionar em cima do que já está instalado hoje.
+  await sendCommandToSelected(selected, `UPDATE2|${zipUrl}`, n => `Comando de teste enviado - a máquina vai instalar a versão beta assim que se conectar.`);
   refreshAll();
 }
 
@@ -1454,7 +1456,15 @@ async function showUpdateV2Modal() {
   if (!(await showConfirmModal(aviso, 'Atualizar Área Segura 2'))) return;
 
   const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
-  await sendCommandToSelected(selected, `UPDATE2|${AREA_SEGURA_V2_VERSION}|${zipUrl}`, n => `Comando de atualização enviado para ${n} máquina(s) - quem já estiver na v${AREA_SEGURA_V2_VERSION} não reinicia à toa.`);
+  // SEM o número de versão de propósito, por enquanto: o programa que está
+  // instalado em campo hoje é de ANTES de existir a checagem de versão
+  // (UPDATE2|versão|url) - mandando nesse formato novo, ele lê a versão como
+  // se fosse parte do endereço do arquivo e trava ("URI inválido"). Sem a
+  // versão, ele entende do jeito antigo (só a URL) e funciona em qualquer
+  // instalação atual, nova ou velha. Assim que TODAS as máquinas confirmarem
+  // rodando essa atualização, dá pra voltar a mandar com versão (reduz
+  // reinício à toa em atualizações futuras).
+  await sendCommandToSelected(selected, `UPDATE2|${zipUrl}`, n => `Comando de atualização enviado para ${n} máquina(s).`);
   refreshAll();
 }
 
