@@ -1367,6 +1367,14 @@ function renderSyncWatchStatus() {
   `;
 }
 
+// Versão atual publicada de cada agente - mandada junto no comando de
+// atualização pra máquina decidir sozinha se já está em dia (ver
+// UPDATE|versaoAlvo|url em AreaSegura.ps1). Atualizar aqui toda vez que uma
+// versão nova for publicada - sem isso, mandar "Atualizar" de novo pra
+// pegar quem ainda não recebeu reiniciaria TAMBÉM quem já está certo.
+const AREA_SEGURA_V1_VERSION = '2.7.0';
+const AREA_SEGURA_V2_VERSION = '1.21.0';
+
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
   if (selected.length === 0) {
@@ -1375,9 +1383,9 @@ async function showUpdateModal() {
   }
 
   const defaultUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura.exe';
-  const url = await showPromptModal('URL do novo executável AreaSegura.exe:', defaultUrl, 'Atualizar Executável');
+  const url = await showPromptModal(`URL do novo executável AreaSegura.exe (versão ${AREA_SEGURA_V1_VERSION}):`, defaultUrl, 'Atualizar Executável');
   if (url && url.startsWith('http')) {
-    await sendCommandToSelected(selected, `UPDATE|${url}`, n => `Comando de atualização enviado para ${n} máquina(s)!`);
+    await sendCommandToSelected(selected, `UPDATE|${AREA_SEGURA_V1_VERSION}|${url}`, n => `Comando de atualização enviado para ${n} máquina(s) - quem já estiver na v${AREA_SEGURA_V1_VERSION} não reinicia à toa.`);
   }
 }
 
@@ -1419,7 +1427,7 @@ async function showUpdateV2Modal() {
   if (!(await showConfirmModal(aviso, 'Atualizar Área Segura 2'))) return;
 
   const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
-  await sendCommandToSelected(selected, `UPDATE2|${zipUrl}`, n => `Comando de atualização enviado para ${n} máquina(s) - aplica assim que cada uma se conectar.`);
+  await sendCommandToSelected(selected, `UPDATE2|${AREA_SEGURA_V2_VERSION}|${zipUrl}`, n => `Comando de atualização enviado para ${n} máquina(s) - quem já estiver na v${AREA_SEGURA_V2_VERSION} não reinicia à toa.`);
   refreshAll();
 }
 
