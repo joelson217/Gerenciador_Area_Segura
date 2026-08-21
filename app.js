@@ -1408,7 +1408,7 @@ const AREA_SEGURA_V2_VERSION = '1.21.0';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.29.0';
+const AREA_SEGURA_V2_BETA_VERSION = '1.29.1';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
