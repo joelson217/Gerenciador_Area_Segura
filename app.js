@@ -1408,7 +1408,7 @@ const AREA_SEGURA_V2_VERSION = '1.21.0';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.27.3';
+const AREA_SEGURA_V2_BETA_VERSION = '1.27.4';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
@@ -1512,10 +1512,13 @@ async function identifyMachine(hwId) {
 // Abre o histórico completo de tentativas suspeitas (senha errada,
 // instalador bloqueado, site adulto bloqueado) de uma máquina - o card só
 // mostra um resumo dos últimos 7 dias, esse botão traz tudo.
+let currentEventsModalHwId = null;
+
 async function showMachineEventsModal(hwId) {
   const modal = document.getElementById('modal-machine-events');
   const list = document.getElementById('machine-events-modal-list');
   if (!modal || !list) return;
+  currentEventsModalHwId = hwId;
   list.innerHTML = '<p style="color:var(--text-secondary); font-size:13px;">Carregando...</p>';
   modal.style.display = 'flex';
 
@@ -1532,6 +1535,20 @@ async function showMachineEventsModal(hwId) {
       <div style="color:var(--text-secondary); font-size:12px;">${new Date(ev.criado_em).toLocaleString('pt-BR')}</div>
     </div>
   `).join('');
+}
+
+async function clearMachineEvents() {
+  const hwId = currentEventsModalHwId;
+  if (!hwId) return;
+  if (!(await showConfirmModal('Deseja apagar todo o histórico de tentativas dessa máquina? Não dá pra desfazer.', 'Limpar Histórico'))) return;
+  const result = await callLicenseApiV2('clear-events', { hardware_id: hwId, admin_token: getAdminToken() });
+  if (result?.ok) {
+    showToast('Histórico apagado.', 'success');
+    await showMachineEventsModal(hwId);
+    checkV2SecurityAlerts();
+  } else {
+    showToast('Não consegui apagar o histórico agora - confira a conexão e tente de novo.', 'error');
+  }
 }
 
 async function showAddMachineModal() {
