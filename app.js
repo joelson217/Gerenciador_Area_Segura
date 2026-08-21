@@ -1023,6 +1023,13 @@ function renderMachineList() {
         <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
           <input type="checkbox" ${v2Machine.block_jogos !== false ? 'checked' : ''} onchange="setMachineCategory('${escapeHtml(m.HardwareID)}', 'JOGOS', this)"> Jogos
         </label>
+      </div>
+      <div style="margin:8px 0;">
+        <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; font-weight:600; padding:5px 10px; border-radius:8px; background:rgba(139,92,246,0.12); border:1px solid var(--accent-purple); color:var(--accent-purple);">
+          <input type="checkbox" ${v2Machine.admin_bypass === true ? 'checked' : ''} onchange="setMachineCategory('${escapeHtml(m.HardwareID)}', 'ADMIN', this)">
+          🔓 Liberar Administrador
+        </label>
+        <div style="font-size:11px; color:var(--text-secondary); margin-top:3px;">Quando a conta usada no PC for Administrador do Windows, libera tudo automaticamente. A conta do aluno continua bloqueada normalmente.</div>
       </div>` : ''}
       <div class="machine-card-body">
         <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
@@ -1408,7 +1415,7 @@ const AREA_SEGURA_V2_VERSION = '1.21.0';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.29.2';
+const AREA_SEGURA_V2_BETA_VERSION = '1.30.0';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
@@ -1481,8 +1488,9 @@ async function showUpdateV2Modal() {
 }
 
 // Liga/desliga uma categoria de bloqueio (Jogos/Sites adultos/Instalação de
-// programas) numa máquina v2 na hora, sem descongelar a máquina inteira nem
-// reiniciar - ver comando SETCAT em AreaSeguraService.ps1.
+// programas) ou o "Liberar Administrador" (categoria ADMIN) numa máquina v2
+// na hora, sem descongelar a máquina inteira nem reiniciar - ver comando
+// SETCAT em AreaSeguraService.ps1.
 async function setMachineCategory(hwId, categoria, checkboxEl) {
   const ligado = checkboxEl.checked;
   checkboxEl.disabled = true;

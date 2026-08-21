@@ -1252,6 +1252,15 @@ input:checked + .switch-slider:before {
   animation: fadeIn 0.2s ease;
 }
 
+/* Confirmação/prompt podem ser abertos de DENTRO de outro modal já aberto
+   (ex: "Limpar Histórico" dentro do modal de detalhes) - sem um z-index
+   maior aqui, os dois ficam empatados em 500 e quem desenha por cima é só
+   quem está depois no HTML, então o de confirmação abria escondido atrás
+   do outro (parecia não fazer nada até fechar o modal de trás). */
+#modal-confirm, #modal-prompt {
+  z-index: 600;
+}
+
 .modal-content {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
