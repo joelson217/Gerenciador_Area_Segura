@@ -1397,7 +1397,7 @@ const AREA_SEGURA_V2_VERSION = '1.21.0';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.22.0';
+const AREA_SEGURA_V2_BETA_VERSION = '1.26.0';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
@@ -1433,9 +1433,10 @@ async function showTestVersionModal() {
   if (!(await showConfirmModal(aviso, 'Testar Versão (Beta)'))) return;
 
   const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2-beta.zip';
-  // Mesmo motivo do showUpdateV2Modal logo acima: sem versão no comando,
-  // por enquanto, pra funcionar em cima do que já está instalado hoje.
-  await sendCommandToSelected(selected, `UPDATE2|${zipUrl}`, n => `Comando de teste enviado - a máquina vai instalar a versão beta assim que se conectar.`);
+  // Com versão de volta no comando - já confirmado que o programa instalado
+  // entende esse formato, então quem já estiver na v${AREA_SEGURA_V2_BETA_VERSION}
+  // não reinstala/reinicia à toa de novo.
+  await sendCommandToSelected(selected, `UPDATE2|${AREA_SEGURA_V2_BETA_VERSION}|${zipUrl}`, n => `Comando de teste enviado - quem já estiver na v${AREA_SEGURA_V2_BETA_VERSION} não reinicia à toa.`);
   refreshAll();
 }
 
