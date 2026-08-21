@@ -1030,12 +1030,23 @@ function renderMachineList() {
         <div><strong>Ambiente:</strong> ${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
         <div><strong>Validade:</strong> ${(!m.DataExpiracao || m.DataExpiracao === '1970-01-01') ? 'Aguardando autorização (ainda não ativada)' : m.DataExpiracao}</div>
         ${cloud.pasta_persistente && cloud.pasta_persistente !== 'Nenhuma' ? `<div><strong>Pasta Persistente:</strong> ${escapeHtml(cloud.pasta_persistente)}</div>` : ''}
+        ${(() => {
+          const resumo = v2Machine && v2Machine.eventos_resumo;
+          if (!resumo) return '';
+          const chips = [];
+          if (resumo.SENHA_ADMIN) chips.push(`⚠️ ${resumo.SENHA_ADMIN} tentativa(s) de senha (7 dias)`);
+          if (resumo.INSTALADOR) chips.push(`⚠️ ${resumo.INSTALADOR} instalação(ões) bloqueada(s) (7 dias)`);
+          if (resumo.SITE_ADULTO) chips.push(`⚠️ ${resumo.SITE_ADULTO} tentativa(s) de site bloqueado (7 dias)`);
+          if (!chips.length) return '';
+          return `<div style="margin-top:6px; display:flex; flex-direction:column; gap:3px; font-size:12px; color:#b45309;">${chips.map(c => `<span>${c}</span>`).join('')}</div>`;
+        })()}
       </div>
       <div class="machine-card-footer">
         <span title="${escapeHtml(cloud.ultima_sincronizacao || '')}">Último contato: ${cloud.ultima_sincronizacao ? escapeHtml(formatRelativeTime(cloud.ultima_sincronizacao)) : 'Sem dados recentes'}</span>
         <button class="btn-small-action" onclick="copyMachineKey('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-copy"/></svg> Copiar Chave</button>
         <button class="btn-small-action" onclick="showMachineKeyQr('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-qr-code"/></svg> QR</button>
         ${v2Machine ? `<button class="btn-small-action" onclick="identifyMachine('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-monitor"/></svg> Identificar</button>` : ''}
+        ${v2Machine ? `<button class="btn-small-action" onclick="showMachineEventsModal('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-history"/></svg> Ver detalhes</button>` : ''}
       </div>
     `;
     container.appendChild(card);
@@ -1397,7 +1408,7 @@ const AREA_SEGURA_V2_VERSION = '1.21.0';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.26.0';
+const AREA_SEGURA_V2_BETA_VERSION = '1.27.0';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
@@ -1496,6 +1507,31 @@ async function identifyMachine(hwId) {
   } else {
     showToast('Não consegui avisar a máquina agora - confira a conexão e tente de novo.', 'error');
   }
+}
+
+// Abre o histórico completo de tentativas suspeitas (senha errada,
+// instalador bloqueado, site adulto bloqueado) de uma máquina - o card só
+// mostra um resumo dos últimos 7 dias, esse botão traz tudo.
+async function showMachineEventsModal(hwId) {
+  const modal = document.getElementById('modal-machine-events');
+  const list = document.getElementById('machine-events-modal-list');
+  if (!modal || !list) return;
+  list.innerHTML = '<p style="color:var(--text-secondary); font-size:13px;">Carregando...</p>';
+  modal.style.display = 'flex';
+
+  const result = await callLicenseApiV2('list-events', { hardware_id: hwId, admin_token: getAdminToken() });
+  const eventos = result?.eventos || [];
+  if (!eventos.length) {
+    list.innerHTML = '<p style="color:var(--text-secondary); font-size:13px;">Nenhuma tentativa registrada.</p>';
+    return;
+  }
+  const labels = { SENHA_ADMIN: '🔒 Tentativa de senha errada', INSTALADOR: '📦 Instalador bloqueado', SITE_ADULTO: '🔞 Site adulto bloqueado' };
+  list.innerHTML = eventos.map(ev => `
+    <div style="border-bottom:1px solid var(--border-color, #eee); padding-bottom:6px; font-size:13px;">
+      <div><strong>${escapeHtml(labels[ev.tipo] || ev.tipo)}</strong>${ev.detalhe ? ` — ${escapeHtml(ev.detalhe)}` : ''}</div>
+      <div style="color:var(--text-secondary); font-size:12px;">${new Date(ev.criado_em).toLocaleString('pt-BR')}</div>
+    </div>
+  `).join('');
 }
 
 async function showAddMachineModal() {
