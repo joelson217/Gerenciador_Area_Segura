@@ -1030,7 +1030,7 @@ function renderMachineList() {
               </button>`;
           }
           if (currentName) {
-            return `<span style="font-size:13px; color:var(--text-primary); font-weight:600;">${escapeHtml(currentName)}</span>
+            return `<span style="font-size:13px; color:var(--text-primary); font-weight:600;">PC: ${escapeHtml(currentName)}</span>
               <button class="btn-small-action" onclick="startEditName('${escapeHtml(hwId)}')"><svg class="icon"><use href="#icon-pencil"/></svg> Renomear</button>`;
           }
           return `<button class="btn-small-action" onclick="startEditName('${escapeHtml(hwId)}')"><svg class="icon"><use href="#icon-pencil"/></svg> Adicionar nome/número</button>`;
@@ -1053,7 +1053,6 @@ function renderMachineList() {
         </label>
       </div>` : ''}
       <div class="machine-card-body">
-        <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
         ${v2Machine && v2Machine.hostname ? `<div><strong>Nome do Windows:</strong> ${escapeHtml(v2Machine.hostname)}</div>` : ''}
         ${cloud.pasta_persistente && cloud.pasta_persistente !== 'Nenhuma' ? `<div><strong>Pasta Persistente:</strong> ${escapeHtml(cloud.pasta_persistente)}</div>` : ''}
         ${(() => {
