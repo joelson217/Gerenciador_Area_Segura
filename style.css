@@ -916,19 +916,12 @@ body {
 }
 
 /* Machine Card */
-#machines-list {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  align-items: start;
-}
-
 .machine-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
-  padding: 12px;
-  min-width: 0;
+  padding: 14px;
+  margin-bottom: 10px;
   transition: var(--transition);
   display: flex;
   flex-direction: column;
