@@ -1125,9 +1125,8 @@ body {
 
 .machine-card-footer {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
   padding-top: 8px;
   border-top: 1px solid var(--border-color);
