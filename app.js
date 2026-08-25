@@ -262,6 +262,18 @@ function isV2Machine(hwId) {
 // Retorna true/false - quem chama usa isso pra contar quantas máquinas
 // realmente receberam o comando, em vez de sempre dizer "enviado!" mesmo
 // quando a chamada falhou (token errado, offline etc.) sem avisar ninguém.
+// Compara "1.30.1" com "1.30.2" numericamente (não como texto). Usado só
+// pra decidir se o badge "Atualizado" aparece verde ou cinza no card.
+function compareVersions(a, b) {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 async function sendSupabaseCommand(hwId, cmd) {
   const api = isV2Machine(hwId) ? callLicenseApiV2 : callLicenseApi;
   const result = await api('command', { hardware_id: hwId, comando: cmd, admin_token: getAdminToken() });
@@ -977,6 +989,17 @@ function renderMachineList() {
         ? `<span class="machine-status-badge status-frozen"><svg class="icon"><use href="#icon-check-circle"/></svg> Confirmou</span>`
         : `<span class="machine-status-badge status-pending"><svg class="icon"><use href="#icon-hourglass"/></svg> Aguardando</span>`;
 
+    // Badge verde/cinza mostrando se essa máquina já confirmou rodando a
+    // versão estável atual (AREA_SEGURA_V2_VERSION) - só aparece pra
+    // máquina v2 que já reportou alguma versão pelo menos uma vez (agentes
+    // antigos, de antes desse campo existir, não mostram nada em vez de
+    // aparecer errado como "desatualizado").
+    const versaoInstalada = v2Machine && v2Machine.versao_instalada;
+    const versionBadge = !versaoInstalada ? '' :
+      compareVersions(versaoInstalada, AREA_SEGURA_V2_VERSION) >= 0
+        ? `<span class="machine-status-badge status-updated" title="Versão instalada: ${escapeHtml(versaoInstalada)}"><svg class="icon"><use href="#icon-check-circle"/></svg> Atualizado (v${escapeHtml(versaoInstalada)})</span>`
+        : `<span class="machine-status-badge status-outdated" title="Versão instalada: ${escapeHtml(versaoInstalada)} - atual é v${AREA_SEGURA_V2_VERSION}"><svg class="icon"><use href="#icon-alert-triangle"/></svg> Desatualizado (v${escapeHtml(versaoInstalada)})</span>`;
+
     const card = document.createElement('div');
     card.className = 'machine-card';
     card.innerHTML = `
@@ -988,6 +1011,7 @@ function renderMachineList() {
         <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
           <span class="machine-status-badge ${badgeClass}"><svg class="icon"><use href="#${statusIcon}"/></svg> ${statusLabel}</span>
           ${syncBadge}
+          ${versionBadge}
         </div>
       </div>
       <div class="machine-name-row" style="margin:8px 0; display:flex; align-items:center; gap:8px;">
@@ -1415,7 +1439,7 @@ const AREA_SEGURA_V2_VERSION = '1.21.0';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.30.1';
+const AREA_SEGURA_V2_BETA_VERSION = '1.30.2';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
@@ -1475,15 +1499,22 @@ async function showUpdateV2Modal() {
   if (!(await showConfirmModal(aviso, 'Atualizar Área Segura 2'))) return;
 
   const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2.zip';
-  // SEM o número de versão de propósito, por enquanto: o programa que está
-  // instalado em campo hoje é de ANTES de existir a checagem de versão
-  // (UPDATE2|versão|url) - mandando nesse formato novo, ele lê a versão como
-  // se fosse parte do endereço do arquivo e trava ("URI inválido"). Sem a
-  // versão, ele entende do jeito antigo (só a URL) e funciona em qualquer
-  // instalação atual, nova ou velha. Assim que TODAS as máquinas confirmarem
-  // rodando essa atualização, dá pra voltar a mandar com versão (reduz
-  // reinício à toa em atualizações futuras).
-  await sendCommandToSelected(selected, `UPDATE2|${zipUrl}`, n => `Comando de atualização enviado para ${n} máquina(s).`);
+  // Voltou a mandar COM o número de versão (formato UPDATE2|versão|url) -
+  // todas as 44 máquinas já foram migradas em 2026-08-20 com um agente bem
+  // além da versão 1.19 (que foi quando o processamento desse formato foi
+  // implementado), então não deveria sobrar nenhuma tão antiga a ponto de
+  // travar lendo a versão como parte da URL (risco antigo, documentado
+  // aqui antes). Com a versão presente, o license-api-v2 agora mantém o
+  // comando na fila até a própria máquina confirmar (reportando a versão
+  // nova num check-in) que terminou de atualizar - antes disso, o comando
+  // era limpo assim que UMA tentativa começava, então qualquer falha no
+  // meio do caminho (rede lenta, offline no momento) perdia a atualização
+  // pra sempre sem avisar ninguém, e só um reenvio manual, máquina por
+  // máquina, resolvia. Se algum dia aparecer uma máquina muito antiga que
+  // não seguiu esse histórico de atualizações, ela vai falhar essa vez
+  // específica (não trava nem perde a proteção que já tem) - só precisa de
+  // atenção manual (reinstalar pelo pendrive) pra essa máquina.
+  await sendCommandToSelected(selected, `UPDATE2|${AREA_SEGURA_V2_VERSION}|${zipUrl}`, n => `Comando de atualização enviado para ${n} máquina(s) - fica valendo até cada uma confirmar que atualizou, mesmo que agora estejam offline.`);
   refreshAll();
 }
 

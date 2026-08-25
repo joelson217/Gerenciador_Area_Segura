@@ -980,6 +980,18 @@ body {
   border: 1px solid rgba(220, 38, 38, 0.4);
 }
 
+.status-updated {
+  background: var(--accent-green-bg);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.status-outdated {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94A3B8;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
 .status-v2 {
   background: rgba(167, 139, 250, 0.15);
   color: #A78BFA;
