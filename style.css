@@ -1134,6 +1134,12 @@ body {
   color: var(--text-muted);
 }
 
+.machine-card-footer-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* --- Ajustes e Segurança --- */
 .settings-card {
   background: var(--bg-card);
