@@ -1441,10 +1441,6 @@ const AREA_SEGURA_V1_VERSION = '2.7.0';
 // NADA disso tinha sido testado numa
 // reinstalação real de ponta a ponta antes desta promoção.
 const AREA_SEGURA_V2_VERSION = '1.30.4';
-// Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
-// estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
-// "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.30.4';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
@@ -1460,31 +1456,36 @@ async function showUpdateModal() {
   }
 }
 
-// Testar uma versão em andamento (beta) numa ÚNICA máquina, depois que ela
-// já foi atualizada normalmente pelo botão "Atualizar Área Segura 2" - fluxo
-// pedido pelo Joelson pra validar uma correção nova numa máquina de teste
-// antes de mandar pra todo mundo. Reaproveita o mesmo canal UPDATE2 de
-// sempre, só que apontando pro pacote/versão beta (sempre um número acima da
-// estável, ver AREA_SEGURA_V2_BETA_VERSION) em vez do estável.
-// Antes desta função existia MIGRATE2 (migração do Área Segura antigo pro
-// Área Segura 2) - não faz mais sentido hoje porque todas as máquinas já
-// foram migradas e o Área Segura antigo não é mais instalado em lugar
-// nenhum.
-async function showTestVersionModal() {
-  const selected = getSelectedHwIds();
-  if (selected.length !== 1) {
-    showToast('Selecione exatamente 1 máquina para testar uma versão em andamento - essa função é pra validar numa máquina só antes de mandar pra todo mundo.', 'warning');
+// Limpa o histórico de tentativas suspeitas (senha/instalador/site adulto)
+// em lote - nas máquinas SELECIONADAS, ou em TODAS as máquinas v2 se
+// nenhuma estiver selecionada. Substituiu o botão "Testar Versão (Beta)"
+// (Joelson não usa mais o fluxo de testar numa máquina só antes de mandar
+// pra todo mundo - ver promoção direta pra estável em 2026-08-24/25).
+async function clearHistorySelectedOrAll() {
+  let targets = getSelectedHwIds();
+  const usingAll = targets.length === 0;
+  if (usingAll) { targets = Object.keys(window.__v2MachinesByHwId || {}); }
+  if (targets.length === 0) {
+    showToast('Nenhuma máquina v2 encontrada para limpar o histórico.', 'warning');
     return;
   }
-  const aviso = 'Isso vai instalar a versão de TESTE (beta) do Área Segura 2 nesta máquina, mantendo senha e proteção como estão. Ela vai reiniciar sozinha ao final. Use só na sua máquina de teste, depois de já ter atualizado ela normalmente. Confirma?';
-  if (!(await showConfirmModal(aviso, 'Testar Versão (Beta)'))) return;
 
-  const zipUrl = 'https://raw.githubusercontent.com/joelson217/Gerenciador_Area_Segura/main/AreaSegura2-beta.zip';
-  // Com versão de volta no comando - já confirmado que o programa instalado
-  // entende esse formato, então quem já estiver na v${AREA_SEGURA_V2_BETA_VERSION}
-  // não reinstala/reinicia à toa de novo.
-  await sendCommandToSelected(selected, `UPDATE2|${AREA_SEGURA_V2_BETA_VERSION}|${zipUrl}`, n => `Comando de teste enviado - quem já estiver na v${AREA_SEGURA_V2_BETA_VERSION} não reinicia à toa.`);
-  refreshAll();
+  const aviso = usingAll
+    ? `Isso vai apagar o histórico de tentativas suspeitas de TODAS as ${targets.length} máquina(s) v2. Não dá pra desfazer. Confirma?`
+    : `Isso vai apagar o histórico de tentativas suspeitas de ${targets.length} máquina(s) selecionada(s). Não dá pra desfazer. Confirma?`;
+  if (!(await showConfirmModal(aviso, 'Limpar Histórico'))) return;
+
+  const BATCH_SIZE = 6;
+  const results = [];
+  for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+    const batch = targets.slice(i, i + BATCH_SIZE);
+    results.push(...await Promise.all(batch.map(hwId => callLicenseApiV2('clear-events', { hardware_id: hwId, admin_token: getAdminToken() }))));
+  }
+  const okCount = results.filter(r => r && r.ok).length;
+  const failCount = results.length - okCount;
+  if (okCount > 0) { showToast(`Histórico limpo em ${okCount} máquina(s).`, 'success'); }
+  if (failCount > 0) { showToast(`Não consegui limpar o histórico de ${failCount} máquina(s) - confira a conexão e tente de novo.`, 'error'); }
+  checkV2SecurityAlerts();
 }
 
 // Atualiza o Área Segura 2 já instalado (não migração - a máquina já é v2).
