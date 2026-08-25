@@ -1440,11 +1440,11 @@ const AREA_SEGURA_V1_VERSION = '2.7.0';
 // da Área de Trabalho mesmo quando o programa de destino está liberado.
 // NADA disso tinha sido testado numa
 // reinstalação real de ponta a ponta antes desta promoção.
-const AREA_SEGURA_V2_VERSION = '1.30.3';
+const AREA_SEGURA_V2_VERSION = '1.30.4';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.30.3';
+const AREA_SEGURA_V2_BETA_VERSION = '1.30.4';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
