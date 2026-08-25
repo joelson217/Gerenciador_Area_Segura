@@ -1058,8 +1058,6 @@ function renderMachineList() {
       <div class="machine-card-body">
         <div><strong>HWID:</strong> <code>${escapeHtml(m.HardwareID)}</code></div>
         ${v2Machine && v2Machine.hostname ? `<div><strong>Nome do Windows:</strong> ${escapeHtml(v2Machine.hostname)}</div>` : ''}
-        <div><strong>Ambiente:</strong> ${escapeHtml(m.Laboratorio || 'Lab Principal')}</div>
-        <div><strong>Validade:</strong> ${(!m.DataExpiracao || m.DataExpiracao === '1970-01-01') ? 'Aguardando autorização (ainda não ativada)' : m.DataExpiracao}</div>
         ${cloud.pasta_persistente && cloud.pasta_persistente !== 'Nenhuma' ? `<div><strong>Pasta Persistente:</strong> ${escapeHtml(cloud.pasta_persistente)}</div>` : ''}
         ${(() => {
           const resumo = v2Machine && v2Machine.eventos_resumo;
@@ -1074,8 +1072,7 @@ function renderMachineList() {
       </div>
       <div class="machine-card-footer">
         <span title="${escapeHtml(cloud.ultima_sincronizacao || '')}">Último contato: ${cloud.ultima_sincronizacao ? escapeHtml(formatRelativeTime(cloud.ultima_sincronizacao)) : 'Sem dados recentes'}</span>
-        <button class="btn-small-action" onclick="copyMachineKey('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-copy"/></svg> Copiar Chave</button>
-        <button class="btn-small-action" onclick="showMachineKeyQr('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-qr-code"/></svg> QR</button>
+        <button class="btn-small-action" onclick="showMachineKeyQr('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-copy"/></svg> Chave</button>
         ${v2Machine ? `<button class="btn-small-action" onclick="identifyMachine('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-monitor"/></svg> Identificar</button>` : ''}
         ${v2Machine ? `<button class="btn-small-action" onclick="showMachineEventsModal('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-history"/></svg> Ver detalhes</button>` : ''}
       </div>
@@ -1207,24 +1204,28 @@ async function authorizeAndActivate(hwId, inputId, clientSelectId) {
   });
 }
 
-async function copyMachineKey(hwId, expDate) {
+// Botão "Chave" do card - mostra a chave (texto pra copiar) e o QR Code
+// juntos no mesmo modal, ao invés de um botão pra cada coisa (era
+// "Copiar Chave" + "QR" separados antes).
+async function showMachineKeyQr(hwId, expDate) {
   // Máquinas pendentes chegam com DataExpiracao "1970-01-01" (marcador de
   // "ainda não ativada") - gerar a chave com essa data cria uma chave já
   // expirada, que o cliente não consegue usar. Nesse caso usa 1 ano a partir
   // de hoje como padrão.
   const exp = (expDate && expDate !== '1970-01-01') ? expDate : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const key = await getActivationKey(hwId, exp);
-  navigator.clipboard.writeText(key).then(() => {
-    showToast(`Chave copiada: ${key}`, 'success');
-  }).catch(() => {
-    showActivationKeyModal(key);
-  });
+  showActivationKeyModal(key);
 }
 
-async function showMachineKeyQr(hwId, expDate) {
-  const exp = (expDate && expDate !== '1970-01-01') ? expDate : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const key = await getActivationKey(hwId, exp);
-  showActivationKeyModal(key);
+function copyActivationKeyModalText() {
+  const textInput = document.getElementById('activation-key-modal-text');
+  if (!textInput || !textInput.value) return;
+  navigator.clipboard.writeText(textInput.value).then(() => {
+    showToast('Chave copiada!', 'success');
+  }).catch(() => {
+    textInput.select();
+    showToast('Selecionado - copie manualmente (Ctrl+C).', 'warning');
+  });
 }
 
 // Ações Remotas em Lote
@@ -1562,9 +1563,21 @@ let currentEventsModalHwId = null;
 async function showMachineEventsModal(hwId) {
   const modal = document.getElementById('modal-machine-events');
   const list = document.getElementById('machine-events-modal-list');
+  const info = document.getElementById('machine-events-modal-info');
   if (!modal || !list) return;
   currentEventsModalHwId = hwId;
   list.innerHTML = '<p style="color:var(--text-secondary); font-size:13px;">Carregando...</p>';
+
+  // Ambiente/Validade saíram do card compacto (ficava grande demais pra
+  // caber duas máquinas por linha no celular) e vieram pra cá.
+  if (info) {
+    const maq = selectedClient?.Maquinas?.find(m => m.HardwareID === hwId);
+    const ambiente = maq?.Laboratorio || 'Lab Principal';
+    const validade = (!maq?.DataExpiracao || maq.DataExpiracao === '1970-01-01') ? 'Aguardando autorização (ainda não ativada)' : maq.DataExpiracao;
+    info.innerHTML = `<div><strong style="color:var(--text-primary);">Ambiente:</strong> ${escapeHtml(ambiente)}</div>
+      <div><strong style="color:var(--text-primary);">Validade:</strong> ${escapeHtml(validade)}</div>`;
+  }
+
   modal.style.display = 'flex';
 
   const result = await callLicenseApiV2('list-events', { hardware_id: hwId, admin_token: getAdminToken() });
