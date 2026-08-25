@@ -964,6 +964,16 @@ body {
   text-transform: uppercase;
 }
 
+.machine-status-badge.truncatable {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
 .status-frozen {
   background: rgba(2, 132, 199, 0.15);
   color: #38BDF8;

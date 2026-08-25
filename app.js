@@ -1000,6 +1000,8 @@ function renderMachineList() {
         ? `<span class="machine-status-badge status-updated" title="Versão instalada: ${escapeHtml(versaoInstalada)}"><svg class="icon"><use href="#icon-check-circle"/></svg> Atualizado (v${escapeHtml(versaoInstalada)})</span>`
         : `<span class="machine-status-badge status-outdated" title="Versão instalada: ${escapeHtml(versaoInstalada)} - atual é v${AREA_SEGURA_V2_VERSION}"><svg class="icon"><use href="#icon-alert-triangle"/></svg> Desatualizado (v${escapeHtml(versaoInstalada)})</span>`;
 
+    const statusLabelLong = statusLabel.length > 42;
+
     const card = document.createElement('div');
     card.className = 'machine-card';
     card.innerHTML = `
@@ -1010,7 +1012,7 @@ function renderMachineList() {
           ${!editingNameFor.has(m.HardwareID) ? `<button class="btn-small-action" onclick="startEditName('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-pencil"/></svg> ${(m.NomeExibicao && m.NomeExibicao !== m.HardwareID) ? 'Renomear' : 'Adicionar nome/número'}</button>` : ''}
         </div>
         <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
-          <span class="machine-status-badge ${badgeClass}"><svg class="icon"><use href="#${statusIcon}"/></svg> ${statusLabel}</span>
+          <span class="machine-status-badge ${badgeClass} ${statusLabelLong ? 'truncatable' : ''}" ${statusLabelLong ? `onclick="showInfoModal(this.dataset.full, 'Status da máquina')" data-full="${statusLabel}"` : ''}><svg class="icon"><use href="#${statusIcon}"/></svg> ${statusLabel}</span>
           ${syncBadge}
           ${versionBadge}
         </div>
@@ -2217,6 +2219,12 @@ function escapeHtml(str) {
 }
 
 let toastTimer = null;
+function showInfoModal(message, title = 'Detalhes') {
+  document.getElementById('info-modal-title').textContent = title;
+  document.getElementById('info-modal-message').textContent = message;
+  document.getElementById('modal-info').style.display = 'flex';
+}
+
 function showToast(message, type = 'info') {
   let toast = document.querySelector('.toast');
   if (!toast) {

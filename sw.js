@@ -1,9 +1,9 @@
 // ============================================
 // ÁREA SEGURA PRO - SERVICE WORKER
-// Versão: 3.8.5 Pro Enterprise
+// Versão: 3.8.6 Pro Enterprise
 // ============================================
 
-const CACHE_NAME = 'gerenciador-v3.8.5';
+const CACHE_NAME = 'gerenciador-v3.8.6';
 const ASSETS = [
   './',
   './index.html',
