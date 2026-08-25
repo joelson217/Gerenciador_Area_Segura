@@ -1007,6 +1007,7 @@ function renderMachineList() {
         <div class="machine-card-header-left">
           <input type="checkbox" class="machine-checkbox" data-hwid="${escapeHtml(m.HardwareID)}" onchange="updateSelectCount()" ${previouslySelected.has(m.HardwareID) ? 'checked' : ''}>
           <span class="machine-card-title">${escapeHtml(m.NomeExibicao || m.HardwareID)}</span>
+          ${!editingNameFor.has(m.HardwareID) ? `<button class="btn-small-action" onclick="startEditName('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-pencil"/></svg> ${(m.NomeExibicao && m.NomeExibicao !== m.HardwareID) ? 'Renomear' : 'Adicionar nome/número'}</button>` : ''}
         </div>
         <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
           <span class="machine-status-badge ${badgeClass}"><svg class="icon"><use href="#${statusIcon}"/></svg> ${statusLabel}</span>
@@ -1029,11 +1030,7 @@ function renderMachineList() {
                 <svg class="icon"><use href="#icon-save"/></svg> Salvar
               </button>`;
           }
-          if (currentName) {
-            return `<span style="font-size:13px; color:var(--text-primary); font-weight:600;">PC: ${escapeHtml(currentName)}</span>
-              <button class="btn-small-action" onclick="startEditName('${escapeHtml(hwId)}')"><svg class="icon"><use href="#icon-pencil"/></svg> Renomear</button>`;
-          }
-          return `<button class="btn-small-action" onclick="startEditName('${escapeHtml(hwId)}')"><svg class="icon"><use href="#icon-pencil"/></svg> Adicionar nome/número</button>`;
+          return `<span style="font-size:12px; color:var(--text-secondary);"><strong>HWID:</strong> <code>${escapeHtml(hwId)}</code></span>`;
         })()}
       </div>
       ${v2Machine ? `
