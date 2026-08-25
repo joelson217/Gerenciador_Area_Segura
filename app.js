@@ -1429,13 +1429,16 @@ function renderSyncWatchStatus() {
 // versão nova for publicada - sem isso, mandar "Atualizar" de novo pra
 // pegar quem ainda não recebeu reiniciaria TAMBÉM quem já está certo.
 const AREA_SEGURA_V1_VERSION = '2.7.0';
-// NÃO bumpar isto até o Joelson confirmar, na máquina de teste, que a
-// versão beta (categorias/descongelar restrito/identificar) está tudo certo
-// - só depois disso o build vira "estável" de verdade e este número sobe
-// pra igualar o AREA_SEGURA_V2_BETA_VERSION, liberando o "Atualizar" em
-// massa pras 44 máquinas. Até lá, continua sendo o build antigo (1.21.0),
-// sem essas novidades ainda.
-const AREA_SEGURA_V2_VERSION = '1.21.0';
+// Promovido pra 1.30.2 em 2026-08-24 a pedido do Joelson - ele decidiu
+// mandar pra todas as 44 máquinas de uma vez amanhã, sem testar antes numa
+// máquina só (recomendei testar primeiro; ele optou por não esperar, dado o
+// prazo). Traz tudo que foi feito na sessão de hoje: histórico de
+// tentativas suspeitas, Liberar Administrador, correções do toggle de
+// instaladores, lista de sites adultos ampliada, atualização remota
+// durável (não perde mais se falhar/ficar offline no meio) e o instalador
+// com a Tela 2 de categorias. NADA disso tinha sido testado numa
+// reinstalação real de ponta a ponta antes desta promoção.
+const AREA_SEGURA_V2_VERSION = '1.30.2';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
