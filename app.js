@@ -215,6 +215,14 @@ let currentPage = 'dashboard';
 // (só em memória - fecha sozinho depois de salvar ou ao trocar de página).
 let editingNameFor = new Set();
 
+// Forma de visualização da lista de máquinas: 'detailed' (cartão completo,
+// um embaixo do outro) ou 'compact' (quadrados pequenos e uniformes, um
+// clique "expande" só aquele card pra ver os detalhes). Fica salvo no
+// aparelho porque é preferência de quem está usando, não do cliente/dados.
+let machineViewMode = localStorage.getItem('area_segura_machine_view_mode') || 'detailed';
+// Hardware IDs expandidos individualmente dentro do modo resumido.
+let expandedMachinesCompact = new Set();
+
 // Controle de Força Bruta no PIN
 let failedPinAttempts = 0;
 let pinLockoutUntil = 0;
@@ -826,9 +834,30 @@ function formatRelativeTime(iso) {
   return `há ${d} dia${d > 1 ? 's' : ''}`;
 }
 
+function setMachineViewMode(mode) {
+  machineViewMode = mode;
+  localStorage.setItem('area_segura_machine_view_mode', mode);
+  renderMachineList();
+}
+
+function expandMachineCompact(hwId) {
+  expandedMachinesCompact.add(hwId);
+  renderMachineList();
+}
+
+function collapseMachineCompact(hwId) {
+  expandedMachinesCompact.delete(hwId);
+  renderMachineList();
+}
+
 function renderMachineList() {
   const container = document.getElementById('machines-list');
   if (!container || !selectedClient) return;
+
+  document.getElementById('view-mode-detailed')?.classList.toggle('active', machineViewMode === 'detailed');
+  document.getElementById('view-mode-compact')?.classList.toggle('active', machineViewMode === 'compact');
+  container.classList.toggle('machines-grid-compact', machineViewMode === 'compact');
+
   // A sincronização automática (a cada 15s) chama esta função de novo -
   // sem isto, o innerHTML = '' abaixo recria os checkboxes zerados e
   // qualquer máquina marcada pelo admin "desmarcava sozinha" alguns
@@ -1003,7 +1032,29 @@ function renderMachineList() {
     const statusLabelLong = statusLabel.length > 42;
 
     const card = document.createElement('div');
-    card.className = 'machine-card';
+
+    // Modo resumido: cartão pequeno e uniforme, só com o essencial. Um
+    // clique em "Expandir" troca esse quadrado pelo cartão completo (mesmo
+    // dos parágrafos abaixo), sem afetar os outros - ver expandedMachinesCompact.
+    if (machineViewMode === 'compact' && !expandedMachinesCompact.has(m.HardwareID)) {
+      const rawStatus = v2Machine ? v2Machine.status_protecao : cloud.status_protecao;
+      const frozenBadgeClass = rawStatus === 'CONGELADO' ? 'status-frozen' : (rawStatus === 'DESCONGELADO' ? 'status-thawed' : 'status-pending');
+      const frozenLabel = rawStatus === 'CONGELADO' ? 'Congelado' : (rawStatus === 'DESCONGELADO' ? 'Descongelado' : 'Status indefinido');
+      card.className = 'machine-card-compact';
+      card.innerHTML = `
+        <div class="machine-card-compact-top">
+          <input type="checkbox" class="machine-checkbox" data-hwid="${escapeHtml(m.HardwareID)}" onchange="updateSelectCount()" ${previouslySelected.has(m.HardwareID) ? 'checked' : ''}>
+          <span class="machine-card-compact-name">${escapeHtml(m.NomeExibicao || m.HardwareID)}</span>
+        </div>
+        <span class="machine-card-compact-hwid">HWID: ${escapeHtml(m.HardwareID)}</span>
+        <span class="machine-status-badge ${frozenBadgeClass}" style="align-self:flex-start;">${frozenLabel}</span>
+        <button class="btn-small-action" style="align-self:flex-end;" onclick="expandMachineCompact('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-search"/></svg> Expandir</button>
+      `;
+      container.appendChild(card);
+      return;
+    }
+
+    card.className = machineViewMode === 'compact' ? 'machine-card machine-card-expanded' : 'machine-card';
     card.innerHTML = `
       <div class="machine-card-header">
         <div class="machine-card-header-left">
@@ -1070,6 +1121,7 @@ function renderMachineList() {
         <button class="btn-small-action" onclick="showMachineKeyQr('${escapeHtml(m.HardwareID)}', '${escapeHtml(m.DataExpiracao)}')"><svg class="icon"><use href="#icon-copy"/></svg> Chave</button>
         ${v2Machine ? `<button class="btn-small-action" onclick="identifyMachine('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-monitor"/></svg> Identificar</button>` : ''}
         ${v2Machine ? `<button class="btn-small-action" onclick="showMachineEventsModal('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-history"/></svg> Ver detalhes</button>` : ''}
+        ${machineViewMode === 'compact' ? `<button class="btn-small-action" onclick="collapseMachineCompact('${escapeHtml(m.HardwareID)}')">Fechar</button>` : ''}
       </div>
     `;
     container.appendChild(card);
