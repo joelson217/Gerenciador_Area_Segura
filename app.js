@@ -1429,20 +1429,22 @@ function renderSyncWatchStatus() {
 // versão nova for publicada - sem isso, mandar "Atualizar" de novo pra
 // pegar quem ainda não recebeu reiniciaria TAMBÉM quem já está certo.
 const AREA_SEGURA_V1_VERSION = '2.7.0';
-// Promovido pra 1.30.2 em 2026-08-24 a pedido do Joelson - ele decidiu
+// Promovido pra 1.30.3 em 2026-08-24 a pedido do Joelson - ele decidiu
 // mandar pra todas as 44 máquinas de uma vez amanhã, sem testar antes numa
 // máquina só (recomendei testar primeiro; ele optou por não esperar, dado o
 // prazo). Traz tudo que foi feito na sessão de hoje: histórico de
 // tentativas suspeitas, Liberar Administrador, correções do toggle de
 // instaladores, lista de sites adultos ampliada, atualização remota
-// durável (não perde mais se falhar/ficar offline no meio) e o instalador
-// com a Tela 2 de categorias. NADA disso tinha sido testado numa
+// durável (não perde mais se falhar/ficar offline no meio), o instalador
+// com a Tela 2 de categorias, e a correção do SRP bloqueando atalho (.LNK)
+// da Área de Trabalho mesmo quando o programa de destino está liberado.
+// NADA disso tinha sido testado numa
 // reinstalação real de ponta a ponta antes desta promoção.
-const AREA_SEGURA_V2_VERSION = '1.30.2';
+const AREA_SEGURA_V2_VERSION = '1.30.3';
 // Versão de teste (Testar Versão (Beta)) - sempre um número ACIMA da
 // estável acima, pra uma máquina em teste nunca ser sobrescrita à toa por um
 // "Atualizar" em massa mandado pra todo mundo enquanto o teste ainda roda.
-const AREA_SEGURA_V2_BETA_VERSION = '1.30.2';
+const AREA_SEGURA_V2_BETA_VERSION = '1.30.3';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
