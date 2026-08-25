@@ -881,6 +881,11 @@ function renderMachineList() {
     return true;
   });
 
+  // Ordem alfabética pelo nome exibido (ou HWID se ainda não tiver nome) -
+  // "numeric:true" faz "PC 2" vir antes de "PC 10" (senão a ordenação de
+  // texto normal colocaria o "1" de "10" antes do "2").
+  machines.sort((a, b) => (a.NomeExibicao || a.HardwareID).localeCompare(b.NomeExibicao || b.HardwareID, 'pt-BR', { numeric: true, sensitivity: 'base' }));
+
   if (machines.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Nenhuma máquina encontrada neste ambiente.</div></div>';
     updateSelectCount();
