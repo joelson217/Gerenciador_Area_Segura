@@ -1532,7 +1532,10 @@ const AREA_SEGURA_V1_VERSION = '2.7.0';
 // reinstalação real de ponta a ponta antes desta promoção.
 // 1.30.5 (2026-08-26): adiciona easyfun.gg/cloudmoonapp.com/minijogos.com.br
 // à lista de sites de jogo bloqueados (achados numa busca real do Joelson).
-const AREA_SEGURA_V2_VERSION = '1.30.5';
+// 1.30.6 (2026-08-26): mais plataformas de cloud gaming (Xbox Cloud Gaming,
+// PlayStation Plus Premium, Netboom, Chikii) + corrige "xbox.com/play" (não
+// era um domínio válido pra hosts file, só "xbox.com" mesmo).
+const AREA_SEGURA_V2_VERSION = '1.30.6';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
