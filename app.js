@@ -1530,7 +1530,9 @@ const AREA_SEGURA_V1_VERSION = '2.7.0';
 // da Área de Trabalho mesmo quando o programa de destino está liberado.
 // NADA disso tinha sido testado numa
 // reinstalação real de ponta a ponta antes desta promoção.
-const AREA_SEGURA_V2_VERSION = '1.30.4';
+// 1.30.5 (2026-08-26): adiciona easyfun.gg/cloudmoonapp.com/minijogos.com.br
+// à lista de sites de jogo bloqueados (achados numa busca real do Joelson).
+const AREA_SEGURA_V2_VERSION = '1.30.5';
 
 async function showUpdateModal() {
   const selected = getSelectedHwIds();
