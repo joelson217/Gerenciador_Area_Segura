@@ -889,6 +889,7 @@ function renderMachineList() {
   if (machines.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Nenhuma máquina encontrada neste ambiente.</div></div>';
     updateSelectCount();
+    renderUpdateStatusSummary();
     return;
   }
 
@@ -1136,6 +1137,7 @@ function renderMachineList() {
 
   updateSelectCount();
   renderSyncWatchStatus();
+  renderUpdateStatusSummary();
 }
 
 function getSelectedHwIds() {
@@ -1474,6 +1476,39 @@ function renderSyncWatchStatus() {
         - <strong>${pending}</strong> ainda esperando ligar/conectar na internet.
       </span>
       <button class="btn-small-action" onclick="clearSyncWatch()">Encerrar rastreio</button>
+    </div>
+  `;
+}
+
+// Mostra, sempre que houver ao menos uma máquina v2 com versão conhecida,
+// quantas já confirmaram a versão mais recente e quais ainda estão
+// pendentes - a "diferença" entre o que foi mandado atualizar e o que já
+// pegou de fato. Diferente do rastreio de confirmação acima (que precisa
+// ser iniciado manualmente e olha "mudou desde X"), este é automático e
+// olha o dado bruto (versao_instalada) que já chega em todo check-in.
+function renderUpdateStatusSummary() {
+  const box = document.getElementById('update-status-summary');
+  if (!box) return;
+  if (!box || !selectedClient) { if (box) box.style.display = 'none'; return; }
+
+  const v2ComVersao = (selectedClient.Maquinas || [])
+    .map(m => ({ m, v2: window.__v2MachinesByHwId?.[m.HardwareID] }))
+    .filter(x => x.v2 && x.v2.versao_instalada);
+
+  if (v2ComVersao.length === 0) { box.style.display = 'none'; return; }
+
+  const pendentes = v2ComVersao.filter(x => compareVersions(x.v2.versao_instalada, AREA_SEGURA_V2_VERSION) < 0);
+  const atualizadas = v2ComVersao.length - pendentes.length;
+
+  box.style.display = 'block';
+  const nomesPendentes = pendentes.slice(0, 8).map(x => escapeHtml(x.m.NomeExibicao || x.m.HardwareID)).join(', ');
+  const resto = pendentes.length > 8 ? ` e mais ${pendentes.length - 8}` : '';
+  box.innerHTML = `
+    <div class="sync-watch-box update-status-box">
+      <span><svg class="icon"><use href="#icon-refresh"/></svg>
+        Atualização: <strong>${atualizadas} de ${v2ComVersao.length}</strong> máquina(s) já na versão v${AREA_SEGURA_V2_VERSION}
+        ${pendentes.length > 0 ? `- <strong>${pendentes.length}</strong> pendente(s): ${nomesPendentes}${resto}` : '- todas atualizadas!'}
+      </span>
     </div>
   `;
 }
