@@ -1036,6 +1036,13 @@ function renderMachineList() {
         : `<span class="machine-status-badge status-outdated" title="Versão instalada: ${escapeHtml(versaoInstalada)} - atual é v${AREA_SEGURA_V2_VERSION}"><svg class="icon"><use href="#icon-alert-triangle"/></svg> Desatualizado (v${escapeHtml(versaoInstalada)})</span>`;
 
     const statusLabelLong = statusLabel.length > 42;
+    // O rodapé mostrava sempre cloud.ultima_sincronizacao (tabela v1) mesmo
+    // numa máquina já migrada pro v2 - como o agente antigo não roda mais
+    // depois da migração, esse valor fica congelado no passado pra sempre,
+    // e o card parecia "sem contato há dias" mesmo checando a cada 15s de
+    // verdade (o selo colorido de status já usava o dado certo, só este
+    // texto que estava errado).
+    const ultimoContatoIso = v2Machine ? v2Machine.ultima_sincronizacao : cloud.ultima_sincronizacao;
 
     const card = document.createElement('div');
 
@@ -1129,7 +1136,7 @@ function renderMachineList() {
           ${v2Machine ? `<button class="btn-small-action" onclick="showMachineEventsModal('${escapeHtml(m.HardwareID)}')"><svg class="icon"><use href="#icon-history"/></svg> Ver detalhes</button>` : ''}
           ${machineViewMode === 'compact' ? `<button class="btn-small-action" onclick="collapseMachineCompact('${escapeHtml(m.HardwareID)}')">Fechar</button>` : ''}
         </div>
-        <span title="${escapeHtml(cloud.ultima_sincronizacao || '')}">Último contato: ${cloud.ultima_sincronizacao ? escapeHtml(formatRelativeTime(cloud.ultima_sincronizacao)) : 'Sem dados recentes'}</span>
+        <span title="${escapeHtml(ultimoContatoIso || '')}">Último contato: ${ultimoContatoIso ? escapeHtml(formatRelativeTime(ultimoContatoIso)) : 'Sem dados recentes'}</span>
       </div>
     `;
     container.appendChild(card);
